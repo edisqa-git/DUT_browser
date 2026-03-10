@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 
 import serial
 
+from app.config import LOG_DIR
 from app.parser.sysmon_parser import SysMonParser
 
 
@@ -17,6 +19,8 @@ class SerialWorker:
         self._stop_event = threading.Event()
         self._lock = threading.Lock()
         self._mode: str | None = None
+        self._log_fp = None
+        self._log_path: Path | None = None
 
     def open(
         self,
@@ -36,6 +40,7 @@ class SerialWorker:
                 replay_file = Path(replay_path)
                 if not replay_file.exists() or not replay_file.is_file():
                     raise RuntimeError(f"Replay file not found: {replay_path}")
+                self._start_log_session(mode=mode, port=port, replay_path=str(replay_file))
                 self._mode = "replay"
                 self._thread = threading.Thread(
                     target=self._replay_loop,
@@ -46,6 +51,7 @@ class SerialWorker:
                 return
 
             self._serial = serial.Serial(port=port, baudrate=baudrate, timeout=1)
+            self._start_log_session(mode=mode, port=port, replay_path=replay_path)
             self._mode = "serial"
             self._thread = threading.Thread(target=self.read_loop, daemon=True)
             self._thread.start()
@@ -68,6 +74,11 @@ class SerialWorker:
             old_thread.join(timeout=1.5)
 
         self.parser.flush()
+        self._close_log_session()
+
+    @property
+    def current_log_path(self) -> str | None:
+        return str(self._log_path) if self._log_path is not None else None
 
     def send(self, text: str) -> None:
         with self._lock:
@@ -87,7 +98,9 @@ class SerialWorker:
                 break
             if not line:
                 continue
-            self.parser.feed(line.decode("utf-8", errors="ignore"))
+            decoded = line.decode("utf-8", errors="ignore")
+            self._write_log_line(decoded)
+            self.parser.feed(decoded)
 
     def _replay_loop(self, replay_file: Path, replay_interval_ms: int) -> None:
         delay_sec = max(1, replay_interval_ms) / 1000.0
@@ -96,6 +109,7 @@ class SerialWorker:
                 for line in fp:
                     if self._stop_event.is_set():
                         break
+                    self._write_log_line(line)
                     self.parser.feed(line)
                     time.sleep(delay_sec)
         finally:
@@ -103,3 +117,28 @@ class SerialWorker:
             with self._lock:
                 self._mode = None
                 self._thread = None
+            self._close_log_session()
+
+    def _start_log_session(self, mode: str, port: str, replay_path: str | None) -> None:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        self._log_path = LOG_DIR / f"dut-session-{timestamp}.log"
+        self._log_fp = self._log_path.open("a", encoding="utf-8")
+        source = replay_path if mode == "replay" else port
+        self._log_fp.write(f"# mode={mode} source={source}\n")
+        self._log_fp.flush()
+
+    def _write_log_line(self, line: str) -> None:
+        with self._lock:
+            if self._log_fp is None:
+                return
+            self._log_fp.write(line)
+            if not line.endswith("\n"):
+                self._log_fp.write("\n")
+            self._log_fp.flush()
+
+    def _close_log_session(self) -> None:
+        with self._lock:
+            if self._log_fp is not None:
+                self._log_fp.close()
+                self._log_fp = None

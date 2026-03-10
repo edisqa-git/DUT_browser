@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { closeSerial, listSerialPorts, openSerial, sendSerial, SerialPortInfo } from "../api/rest";
-import { connectDashboardWebSocket, WifiClient } from "../api/websocket";
-import ClientsPanel from "../components/ClientsPanel";
+import {
+  closeSerial,
+  getSerialLogDownloadUrl,
+  listSerialPorts,
+  openSerial,
+  sendSerial,
+  SerialPortInfo,
+} from "../api/rest";
+import { connectDashboardWebSocket } from "../api/websocket";
 import ConsolePanel from "../components/ConsolePanel";
-import CpuChart, { CpuPoint } from "../components/CpuChart";
-
-type Radio = "2G" | "5G" | "6G";
 const DEFAULT_SERIAL_PORT = "/dev/ttyUSB0";
 
 function choosePreferredPort(ports: SerialPortInfo[]): string {
@@ -19,13 +22,6 @@ function choosePreferredPort(ports: SerialPortInfo[]): string {
 
 export default function Dashboard() {
   const [lines, setLines] = useState<string[]>([]);
-  const [cpuPoints, setCpuPoints] = useState<CpuPoint[]>([]);
-  const [coreKeys, setCoreKeys] = useState<string[]>([]);
-  const [clientsByRadio, setClientsByRadio] = useState<Record<Radio, WifiClient[]>>({
-    "2G": [],
-    "5G": [],
-    "6G": [],
-  });
   const [mode, setMode] = useState<"serial" | "replay">("serial");
   const [port, setPort] = useState(DEFAULT_SERIAL_PORT);
   const [baudrate, setBaudrate] = useState(115200);
@@ -34,48 +30,28 @@ export default function Dashboard() {
   const [serialPorts, setSerialPorts] = useState<SerialPortInfo[]>([]);
   const [portsLoading, setPortsLoading] = useState(false);
   const [portsError, setPortsError] = useState("");
+  const [currentLogFileName, setCurrentLogFileName] = useState("");
 
   useEffect(() => {
     const ws = connectDashboardWebSocket((event) => {
       if (event.type === "console_line" && typeof event.text === "string") {
         setLines((prev) => [...prev.slice(-999), event.text]);
       }
-
-      if (event.type === "snapshot_update" && event.snapshot && typeof event.snapshot === "object") {
-        const nextPoint: CpuPoint = { device_ts: event.snapshot.device_ts };
-        const nextCoreKeys: string[] = [];
-
-        Object.entries(event.snapshot.cpu).forEach(([coreId, metrics]) => {
-          const key = `CPU${coreId}`;
-          nextCoreKeys.push(key);
-          nextPoint[key] = Number((100 - Number(metrics.idle)).toFixed(2));
-        });
-
-        setCpuPoints((prev) => [...prev.slice(-299), nextPoint]);
-        setCoreKeys((prev) => {
-          const merged = new Set([...prev, ...nextCoreKeys]);
-          return Array.from(merged).sort();
-        });
-      }
-
-      if (event.type === "wifi_clients_update") {
-        setClientsByRadio((prev) => ({
-          ...prev,
-          [event.radio]: event.clients,
-        }));
-      }
     });
     return () => ws.close();
   }, []);
 
   async function handleOpen() {
-    await openSerial({
+    const response = await openSerial({
       mode,
       port,
       baudrate,
       replay_path: mode === "replay" ? replayPath : undefined,
       replay_interval_ms: replayIntervalMs,
     });
+    const logPath = response.log_path || "";
+    const fileName = logPath.split(/[\\/]/).pop() || "";
+    setCurrentLogFileName(fileName);
   }
 
   async function handleClose() {
@@ -84,6 +60,13 @@ export default function Dashboard() {
 
   async function handleSend(text: string) {
     await sendSerial(text);
+  }
+
+  function handleDownloadLog() {
+    if (!currentLogFileName) {
+      return;
+    }
+    window.open(getSerialLogDownloadUrl(currentLogFileName), "_blank");
   }
 
   const refreshSerialPorts = useCallback(async () => {
@@ -119,7 +102,29 @@ export default function Dashboard() {
 
   const controls = useMemo(
     () => (
-      <div style={{ border: "1px solid #ddd", padding: 12, marginBottom: 12 }}>
+      <div style={{ border: "1px solid #ddd", padding: 12, marginBottom: 12, position: "relative" }}>
+        <button
+          onClick={handleClose}
+          style={{
+            position: "absolute",
+            top: 8,
+            right: 8,
+            width: 28,
+            height: 28,
+            background: "#d32f2f",
+            color: "#fff",
+            border: "1px solid #b71c1c",
+            borderRadius: 6,
+            fontSize: 16,
+            fontWeight: 700,
+            lineHeight: 1,
+            cursor: "pointer",
+          }}
+          aria-label="Close serial connection"
+          title="Close"
+        >
+          X
+        </button>
         <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           <button onClick={() => setMode("serial")} disabled={mode === "serial"}>
             Serial Mode
@@ -132,7 +137,7 @@ export default function Dashboard() {
         {mode === "serial" ? (
           <div style={{ display: "grid", gap: 8 }}>
             <div style={{ display: "flex", gap: 8 }}>
-              <select value={port} onChange={(e) => setPort(e.target.value)} style={{ flex: 1 }}>
+              <select value={port} onChange={(e) => setPort(e.target.value)} style={{ width: 240 }}>
                 <option value="">Select detected serial port</option>
                 {serialPorts.map((serialPort) => (
                   <option key={serialPort.device} value={serialPort.device}>
@@ -147,13 +152,15 @@ export default function Dashboard() {
             <input
               value={port}
               onChange={(e) => setPort(e.target.value)}
-              placeholder="Or type serial port manually"
+              placeholder="Manual serial port override (optional, e.g. /dev/ttyUSB0)"
+              style={{ width: 240 }}
             />
             <input
               type="number"
               value={baudrate}
               onChange={(e) => setBaudrate(Number(e.target.value || 0))}
               placeholder="Baudrate"
+              style={{ width: 140 }}
             />
             {portsError ? <div style={{ color: "#b00020", fontSize: 12 }}>{portsError}</div> : null}
           </div>
@@ -169,22 +176,48 @@ export default function Dashboard() {
           </div>
         )}
 
-        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-          <button onClick={handleOpen}>Open</button>
-          <button onClick={handleClose}>Close</button>
+        <div style={{ display: "flex", gap: 8, marginTop: 8, justifyContent: "center", alignItems: "center" }}>
+          <button
+            onClick={handleOpen}
+            style={{
+              background: "#1976d2",
+              color: "#fff",
+              border: "1px solid #1565c0",
+              padding: "10px 23px",
+              fontSize: 16,
+              fontWeight: 600,
+              borderRadius: 6,
+            }}
+          >
+            Open
+          </button>
         </div>
       </div>
     ),
-    [mode, port, baudrate, replayPath, replayIntervalMs, serialPorts, portsLoading, portsError, refreshSerialPorts],
+    [
+      mode,
+      port,
+      baudrate,
+      replayPath,
+      replayIntervalMs,
+      serialPorts,
+      portsLoading,
+      portsError,
+      refreshSerialPorts,
+      currentLogFileName,
+    ],
   );
 
   return (
     <div style={{ fontFamily: "sans-serif", maxWidth: 1100, margin: "0 auto", padding: 16 }}>
-      <h1>DUT Dashboard - Milestone 3</h1>
+      <h1 style={{ textAlign: "center" }}>DUT Dashboard - Milestone 3</h1>
       {controls}
-      <CpuChart data={cpuPoints} coreKeys={coreKeys} />
-      <ClientsPanel clientsByRadio={clientsByRadio} />
-      <ConsolePanel lines={lines} onSend={handleSend} />
+      <ConsolePanel
+        lines={lines}
+        onSend={handleSend}
+        onDownloadLog={handleDownloadLog}
+        canDownloadLog={Boolean(currentLogFileName)}
+      />
     </div>
   );
 }

@@ -1,8 +1,11 @@
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from serial.tools import list_ports
+
+from app.config import LOG_DIR
 
 router = APIRouter(prefix="/api/serial", tags=["serial"])
 
@@ -36,7 +39,8 @@ def list_serial_ports() -> dict:
 @router.post("/open")
 def open_serial(body: SerialOpenRequest, request: Request) -> dict:
     try:
-        request.app.state.serial_worker.open(
+        serial_worker = request.app.state.serial_worker
+        serial_worker.open(
             port=body.port,
             baudrate=body.baudrate,
             mode=body.mode,
@@ -45,7 +49,7 @@ def open_serial(body: SerialOpenRequest, request: Request) -> dict:
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"ok": True, "mode": body.mode}
+    return {"ok": True, "mode": body.mode, "log_path": serial_worker.current_log_path}
 
 
 @router.post("/close")
@@ -61,3 +65,16 @@ def send_serial(body: SerialSendRequest, request: Request) -> dict:
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True}
+
+
+@router.get("/logs/{file_name}")
+def download_log(file_name: str) -> FileResponse:
+    safe_name = file_name.split("/")[-1]
+    if safe_name != file_name:
+        raise HTTPException(status_code=400, detail="Invalid file name")
+
+    file_path = LOG_DIR / safe_name
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Log file not found")
+
+    return FileResponse(path=file_path, filename=safe_name, media_type="text/plain")

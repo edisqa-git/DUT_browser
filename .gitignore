@@ -9,3 +9,4 @@ dut-dashboard/frontend/node_modules/
 
 dut-dashboard/logs/analyzer_output/
 dut-dashboard/logs/snapshots.jsonl
+dut-dashboard/logs/dut-session-*.log

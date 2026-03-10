@@ -6,6 +6,12 @@ export type OpenSerialParams = {
   replay_interval_ms?: number;
 };
 
+export type OpenSerialResponse = {
+  ok: boolean;
+  mode: "serial" | "replay";
+  log_path?: string | null;
+};
+
 export type SerialPortInfo = {
   device: string;
   description: string;
@@ -32,8 +38,8 @@ async function get<T>(url: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-export async function openSerial(params: OpenSerialParams): Promise<{ ok: boolean }> {
-  return post<{ ok: boolean }>("/api/serial/open", params);
+export async function openSerial(params: OpenSerialParams): Promise<OpenSerialResponse> {
+  return post<OpenSerialResponse>("/api/serial/open", params);
 }
 
 export async function closeSerial(): Promise<{ ok: boolean }> {
@@ -47,4 +53,8 @@ export async function sendSerial(text: string): Promise<{ ok: boolean }> {
 export async function listSerialPorts(): Promise<SerialPortInfo[]> {
   const result = await get<{ ports: SerialPortInfo[] }>("/api/serial/ports");
   return result.ports;
+}
+
+export function getSerialLogDownloadUrl(fileName: string): string {
+  return `/api/serial/logs/${encodeURIComponent(fileName)}`;
 }
