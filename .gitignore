@@ -1,0 +1,11 @@
+.DS_Store
+__pycache__/
+*.pyc
+
+.venv/
+venv/
+
+dut-dashboard/frontend/node_modules/
+
+dut-dashboard/logs/analyzer_output/
+dut-dashboard/logs/snapshots.jsonl

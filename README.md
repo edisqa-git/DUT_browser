@@ -47,6 +47,36 @@ npm run dev
 Dashboard URL (local): `http://127.0.0.1:5173`
 Dashboard URL (same LAN): `http://<your-server-ip>:5173`
 
+## Push To GitHub
+
+First-time setup (if remote is not configured yet):
+
+```bash
+cd /Users/iotedimax/Documents/DUT_browser
+git init
+git add .
+git commit -m "Initial commit"
+git branch -M main
+git remote add origin https://github.com/<your-user>/<your-repo>.git
+git push -u origin main
+```
+
+Regular update flow:
+
+```bash
+cd /Users/iotedimax/Documents/DUT_browser
+git status
+git add .
+git commit -m "Describe your change"
+git push origin <branch-name>
+```
+
+Check remote configuration:
+
+```bash
+git remote -v
+```
+
 ## API Summary
 
 - `POST /api/serial/open`
