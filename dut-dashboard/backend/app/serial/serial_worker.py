@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 import time
 from datetime import datetime
@@ -12,6 +13,8 @@ from app.parser.sysmon_parser import SysMonParser
 
 
 class SerialWorker:
+    _FSYNC_INTERVAL_SEC = 180
+
     def __init__(self, parser: SysMonParser) -> None:
         self.parser = parser
         self._serial: serial.Serial | None = None
@@ -21,6 +24,7 @@ class SerialWorker:
         self._mode: str | None = None
         self._log_fp = None
         self._log_path: Path | None = None
+        self._last_fsync_monotonic: float = 0.0
 
     def open(
         self,
@@ -127,6 +131,8 @@ class SerialWorker:
         source = replay_path if mode == "replay" else port
         self._log_fp.write(f"# mode={mode} source={source}\n")
         self._log_fp.flush()
+        self._last_fsync_monotonic = time.monotonic()
+        os.fsync(self._log_fp.fileno())
 
     def _write_log_line(self, line: str) -> None:
         with self._lock:
@@ -136,9 +142,23 @@ class SerialWorker:
             if not line.endswith("\n"):
                 self._log_fp.write("\n")
             self._log_fp.flush()
+        self._maybe_force_sync()
+
+    def _maybe_force_sync(self) -> None:
+        now = time.monotonic()
+        with self._lock:
+            if self._log_fp is None:
+                return
+            if now - self._last_fsync_monotonic < self._FSYNC_INTERVAL_SEC:
+                return
+            self._log_fp.flush()
+            os.fsync(self._log_fp.fileno())
+            self._last_fsync_monotonic = now
 
     def _close_log_session(self) -> None:
         with self._lock:
             if self._log_fp is not None:
+                self._log_fp.flush()
+                os.fsync(self._log_fp.fileno())
                 self._log_fp.close()
                 self._log_fp = None
