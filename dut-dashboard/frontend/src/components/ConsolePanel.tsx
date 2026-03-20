@@ -7,7 +7,12 @@ type Props = {
   canDownloadLog: boolean;
 };
 
-export default function ConsolePanel({ lines, onSend, onDownloadLog, canDownloadLog }: Props) {
+export default function ConsolePanel({
+  lines,
+  onSend,
+  onDownloadLog,
+  canDownloadLog,
+}: Props) {
   const [command, setCommand] = useState("");
   const consoleRef = useRef<HTMLDivElement | null>(null);
   const [stickToBottom, setStickToBottom] = useState(true);
@@ -56,9 +61,11 @@ export default function ConsolePanel({ lines, onSend, onDownloadLog, canDownload
     <div style={{ border: "1px solid #ddd", padding: 12 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
         <h3 style={{ margin: 0 }}>Serial Console</h3>
-        <button type="button" onClick={onDownloadLog} disabled={!canDownloadLog}>
-          Download DUT Log
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" onClick={onDownloadLog} disabled={!canDownloadLog}>
+            Download DUT Log
+          </button>
+        </div>
       </div>
       <div
         ref={consoleRef}

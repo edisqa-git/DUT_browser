@@ -11,6 +11,7 @@ import {
 import { connectDashboardWebSocket } from "../api/websocket";
 import ConsolePanel from "../components/ConsolePanel";
 const DEFAULT_SERIAL_PORT = "/dev/ttyUSB0";
+const CRITICAL_CRASH_PATTERN = /\b(kernel panic|q6 crash|watchdog(?:\s+reset|\s+bite|\s+timeout)?)\b/i;
 
 function choosePreferredPort(ports: SerialPortInfo[]): string {
   if (ports.length === 0) {
@@ -31,6 +32,7 @@ export default function Dashboard() {
   const [portsLoading, setPortsLoading] = useState(false);
   const [portsError, setPortsError] = useState("");
   const [currentLogFileName, setCurrentLogFileName] = useState("");
+  const [lastSeenCriticalCrashCount, setLastSeenCriticalCrashCount] = useState(0);
 
   useEffect(() => {
     const ws = connectDashboardWebSocket((event) => {
@@ -60,6 +62,14 @@ export default function Dashboard() {
 
   async function handleSend(text: string) {
     await sendSerial(text);
+  }
+
+  async function handleRunTop() {
+    await sendSerial("top\n");
+  }
+
+  async function handleStopCommand() {
+    await sendSerial("\u0003");
   }
 
   function handleDownloadLog() {
@@ -103,28 +113,27 @@ export default function Dashboard() {
   const controls = useMemo(
     () => (
       <div style={{ border: "1px solid #ddd", padding: 12, marginBottom: 12, position: "relative" }}>
-        <button
-          onClick={handleClose}
-          style={{
-            position: "absolute",
-            top: 8,
-            right: 8,
-            width: 28,
-            height: 28,
-            background: "#d32f2f",
-            color: "#fff",
-            border: "1px solid #b71c1c",
-            borderRadius: 6,
-            fontSize: 16,
-            fontWeight: 700,
-            lineHeight: 1,
-            cursor: "pointer",
-          }}
-          aria-label="Close serial connection"
-          title="Close"
-        >
-          X
-        </button>
+        <div style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: 8, alignItems: "center" }}>
+          <button
+            onClick={handleClose}
+            style={{
+              width: 28,
+              height: 28,
+              background: "#d32f2f",
+              color: "#fff",
+              border: "1px solid #b71c1c",
+              borderRadius: 6,
+              fontSize: 16,
+              fontWeight: 700,
+              lineHeight: 1,
+              cursor: "pointer",
+            }}
+            aria-label="Close serial connection"
+            title="Close"
+          >
+            X
+          </button>
+        </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           <button onClick={() => setMode("serial")} disabled={mode === "serial"}>
             Serial Mode
@@ -148,6 +157,21 @@ export default function Dashboard() {
               <button type="button" onClick={() => void refreshSerialPorts()} disabled={portsLoading}>
                 {portsLoading ? "Refreshing..." : "Refresh Ports"}
               </button>
+              <button
+                type="button"
+                onClick={() => void handleOpen()}
+                style={{
+                  background: "#1976d2",
+                  color: "#fff",
+                  border: "1px solid #1565c0",
+                  padding: "6px 12px",
+                  fontSize: 14,
+                  fontWeight: 600,
+                  borderRadius: 6,
+                }}
+              >
+                Open
+              </button>
             </div>
             <input
               value={port}
@@ -160,7 +184,7 @@ export default function Dashboard() {
               value={baudrate}
               onChange={(e) => setBaudrate(Number(e.target.value || 0))}
               placeholder="Baudrate"
-              style={{ width: 140 }}
+              style={{ width: 88 }}
             />
             {portsError ? <div style={{ color: "#b00020", fontSize: 12 }}>{portsError}</div> : null}
           </div>
@@ -173,25 +197,23 @@ export default function Dashboard() {
               onChange={(e) => setReplayIntervalMs(Number(e.target.value || 0))}
               placeholder="Replay interval ms"
             />
+            <button
+              type="button"
+              onClick={() => void handleOpen()}
+              style={{
+                background: "#1976d2",
+                color: "#fff",
+                border: "1px solid #1565c0",
+                padding: "6px 12px",
+                fontSize: 14,
+                fontWeight: 600,
+                borderRadius: 6,
+              }}
+            >
+              Open
+            </button>
           </div>
         )}
-
-        <div style={{ display: "flex", gap: 8, marginTop: 8, justifyContent: "center", alignItems: "center" }}>
-          <button
-            onClick={handleOpen}
-            style={{
-              background: "#1976d2",
-              color: "#fff",
-              border: "1px solid #1565c0",
-              padding: "10px 23px",
-              fontSize: 16,
-              fontWeight: 600,
-              borderRadius: 6,
-            }}
-          >
-            Open
-          </button>
-        </div>
       </div>
     ),
     [
@@ -208,10 +230,105 @@ export default function Dashboard() {
     ],
   );
 
+  const allCriticalCrashLines = useMemo(() => {
+    return lines.filter((line) => CRITICAL_CRASH_PATTERN.test(line));
+  }, [lines]);
+
+  const newCriticalCrashCount = Math.max(0, allCriticalCrashLines.length - lastSeenCriticalCrashCount);
+  const criticalCrashRows = useMemo(() => {
+    const rows = allCriticalCrashLines.map((text, index) => ({
+      text,
+      isNew: index >= lastSeenCriticalCrashCount,
+    }));
+    return rows.slice(-20);
+  }, [allCriticalCrashLines, lastSeenCriticalCrashCount]);
+
   return (
     <div style={{ fontFamily: "sans-serif", maxWidth: 1100, margin: "0 auto", padding: 16 }}>
       <h1 style={{ textAlign: "center" }}>DUT Dashboard - Milestone 3</h1>
       {controls}
+      <div style={{ border: "1px solid #ddd", padding: 12, marginBottom: 12 }}>
+        <div
+          style={{
+            display: "grid",
+            gap: 12,
+            gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+            alignItems: "start",
+          }}
+        >
+          <div>
+            <h3 style={{ marginTop: 0, marginBottom: 8 }}>CPU Monitor Commands</h3>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start" }}>
+              <button type="button" onClick={() => void handleRunTop()}>
+                Memory Info
+              </button>
+              <button type="button" onClick={() => void handleStopCommand()}>
+                Stop
+              </button>
+            </div>
+          </div>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <h3 style={{ marginTop: 0, marginBottom: 0, color: "#b71c1c" }}>
+                Critical Crash ({allCriticalCrashLines.length})
+              </h3>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span
+                  style={{
+                    background: newCriticalCrashCount > 0 ? "#b71c1c" : "#9e9e9e",
+                    color: "#fff",
+                    borderRadius: 999,
+                    padding: "2px 8px",
+                    fontSize: 11,
+                    fontWeight: 700,
+                  }}
+                >
+                  New {newCriticalCrashCount}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setLastSeenCriticalCrashCount(allCriticalCrashLines.length)}
+                  disabled={newCriticalCrashCount === 0}
+                >
+                  Mark as seen
+                </button>
+              </div>
+            </div>
+            <div
+              style={{
+                border: "1px solid #f3b7b7",
+                background: "#fff6f6",
+                color: "#4a1515",
+                borderRadius: 6,
+                minHeight: 72,
+                maxHeight: 140,
+                overflowY: "auto",
+                padding: 8,
+                fontFamily: "monospace",
+                fontSize: 12,
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {criticalCrashRows.length > 0 ? (
+                criticalCrashRows.map((row, index) => (
+                  <div
+                    key={`${index}-${row.text}`}
+                    style={{
+                      background: row.isNew ? "#ffe0e0" : "transparent",
+                      padding: row.isNew ? "1px 2px" : 0,
+                      borderRadius: 2,
+                    }}
+                  >
+                    {row.text}
+                  </div>
+                ))
+              ) : (
+                <div>No critical crash detected yet (kernel panic / Q6 crash / watchdog).</div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
       <ConsolePanel
         lines={lines}
         onSend={handleSend}
