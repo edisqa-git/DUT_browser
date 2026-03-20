@@ -6,6 +6,7 @@ Milestone 4 implements:
 - clients marker + JSON parsing into `wifi_clients_update`
 - analyzer integration via `POST /api/analyzer/run`
 - artifact download via `GET /api/download/{file}`
+- frontend `Critical Crash` panel with live keyword detection (`kernel panic` / `Q6 crash` / `watchdog`)
 
 ## Run Backend
 
@@ -26,6 +27,16 @@ npm run dev
 ```
 
 Open `http://127.0.0.1:5173` (local) or `http://<your-server-ip>:5173` (LAN).
+
+## Frontend Console Controls
+
+- `CPU Monitor Commands` provides:
+- `Memory Info`: sends `top`
+- `Stop`: sends Ctrl+C to stop the running foreground command
+- `Critical Crash` panel shows live matched critical crash lines from console stream:
+- keeps recent entries in view
+- shows `New <count>` badge for unseen entries
+- includes `Mark as seen` to clear unseen count
 
 ## Serial / Replay
 
@@ -66,6 +77,21 @@ curl -L -o memory.csv http://127.0.0.1:8000/api/download/memory.csv
 ```
 
 Generated artifacts are stored in `logs/analyzer_output/`.
+
+## Log Event Detector Tool
+
+Standalone detector script:
+
+```bash
+python3 tools/log_event_detector.py --root . --output log_events.json
+```
+
+Produces:
+- `log_events.json`: merged abnormal event detection result for scanned logs
+- `tools/example_output.json`: example output snapshot
+
+Rule and usage details:
+- `tools/README_log_event_detector.md`
 
 ## Event Contracts
 
