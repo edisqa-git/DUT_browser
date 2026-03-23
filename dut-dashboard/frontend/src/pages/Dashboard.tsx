@@ -33,11 +33,13 @@ export default function Dashboard() {
   const [portsError, setPortsError] = useState("");
   const [currentLogFileName, setCurrentLogFileName] = useState("");
   const [lastSeenCriticalCrashCount, setLastSeenCriticalCrashCount] = useState(0);
+  const [downloadNotice, setDownloadNotice] = useState<{ message: string; tone: "blue" | "green" } | null>(null);
 
   useEffect(() => {
     const ws = connectDashboardWebSocket((event) => {
-      if (event.type === "console_line" && typeof event.text === "string") {
-        setLines((prev) => [...prev.slice(-999), event.text]);
+      const maybeText = (event as { text?: unknown }).text;
+      if (event.type === "console_line" && typeof maybeText === "string") {
+        setLines((prev) => [...prev.slice(-999), maybeText]);
       }
     });
     return () => ws.close();
@@ -72,12 +74,61 @@ export default function Dashboard() {
     await sendSerial("\u0003");
   }
 
-  function handleDownloadLog() {
+  function parseDownloadFileName(contentDisposition: string | null, fallbackName: string): string {
+    if (!contentDisposition) {
+      return fallbackName;
+    }
+    const utf8Match = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8Match?.[1]) {
+      try {
+        return decodeURIComponent(utf8Match[1]);
+      } catch {
+        return utf8Match[1];
+      }
+    }
+    const asciiMatch = contentDisposition.match(/filename=\"?([^\";]+)\"?/i);
+    return asciiMatch?.[1] || fallbackName;
+  }
+
+  async function handleDownloadLog() {
     if (!currentLogFileName) {
       return;
     }
-    window.open(getSerialLogDownloadUrl(currentLogFileName), "_blank");
+    const fallbackName = currentLogFileName;
+    const response = await fetch(getSerialLogDownloadUrl(currentLogFileName));
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+
+    const contentType = (response.headers.get("content-type") || "").toLowerCase();
+    const fileName = parseDownloadFileName(response.headers.get("content-disposition"), fallbackName);
+    const blob = await response.blob();
+
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = fileName;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.URL.revokeObjectURL(url);
+
+    if (contentType.includes("text/plain")) {
+      setDownloadNotice({ message: "The log file is ready.", tone: "blue" });
+      return;
+    }
+    setDownloadNotice({ message: "DUT CPU and Memory usage plots are created.", tone: "green" });
   }
+
+  useEffect(() => {
+    if (!downloadNotice) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setDownloadNotice(null);
+    }, 3000);
+    return () => window.clearTimeout(timer);
+  }, [downloadNotice]);
 
   const refreshSerialPorts = useCallback(async () => {
     setPortsLoading(true);
@@ -335,6 +386,24 @@ export default function Dashboard() {
         onDownloadLog={handleDownloadLog}
         canDownloadLog={Boolean(currentLogFileName)}
       />
+      {downloadNotice ? (
+        <div
+          style={{
+            position: "fixed",
+            right: 16,
+            bottom: 16,
+            background: downloadNotice.tone === "blue" ? "#1565c0" : "#1b5e20",
+            color: "#fff",
+            padding: "10px 12px",
+            borderRadius: 8,
+            boxShadow: "0 4px 10px rgba(0, 0, 0, 0.2)",
+            fontSize: 13,
+            zIndex: 9999,
+          }}
+        >
+          {downloadNotice.message}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -8,4 +8,3 @@ createRoot(document.getElementById("root")!).render(
     <Dashboard />
   </React.StrictMode>,
 );
-TS
