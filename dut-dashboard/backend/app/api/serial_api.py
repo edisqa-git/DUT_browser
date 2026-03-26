@@ -213,6 +213,11 @@ def send_serial(body: SerialSendRequest, request: Request) -> dict:
     return {"ok": True}
 
 
+@router.get("/efficiency-report")
+def get_efficiency_report(request: Request) -> dict:
+    return request.app.state.parser.efficiency_report()
+
+
 @router.get("/logs/{file_name}")
 def download_log(file_name: str) -> FileResponse:
     try:

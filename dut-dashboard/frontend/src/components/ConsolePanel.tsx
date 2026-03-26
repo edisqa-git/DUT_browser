@@ -1,4 +1,4 @@
-import { CSSProperties, FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { CSSProperties, FormEvent, KeyboardEvent as ReactKeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { keymap } from "@codemirror/view";
 import CodeMirror, { EditorView, ViewUpdate } from "@uiw/react-codemirror";
 import { vim } from "@replit/codemirror-vim";
@@ -78,13 +78,51 @@ export default function ConsolePanel({
     await sendCommand(command, setCommand);
   }
 
-  function handleInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+  function handleInputKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
     if (event.key !== "Tab") {
       return;
     }
     event.preventDefault();
     void onSend("\t");
   }
+
+  useEffect(() => {
+    function hasActiveTextSelection(target: EventTarget | null): boolean {
+      const selectionText = window.getSelection()?.toString() ?? "";
+      if (selectionText.length > 0) {
+        return true;
+      }
+      if (!(target instanceof HTMLElement)) {
+        return false;
+      }
+      if (target.isContentEditable) {
+        return true;
+      }
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+        const start = target.selectionStart ?? 0;
+        const end = target.selectionEnd ?? 0;
+        return start !== end;
+      }
+      return false;
+    }
+
+    function handleGlobalKeyDown(event: KeyboardEvent) {
+      const isCtrlC = (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c";
+      if (!isCtrlC || event.altKey || event.shiftKey) {
+        return;
+      }
+      if (hasActiveTextSelection(event.target)) {
+        return;
+      }
+      event.preventDefault();
+      void onSend("\u0003");
+    }
+
+    window.addEventListener("keydown", handleGlobalKeyDown, { capture: true });
+    return () => {
+      window.removeEventListener("keydown", handleGlobalKeyDown, { capture: true });
+    };
+  }, [onSend]);
 
   function openEditor() {
     setDraftCommand(command);

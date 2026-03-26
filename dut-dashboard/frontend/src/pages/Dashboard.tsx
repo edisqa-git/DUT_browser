@@ -41,7 +41,11 @@ export default function Dashboard() {
     const ws = connectDashboardWebSocket((event) => {
       const maybeText = (event as { text?: unknown }).text;
       if (event.type === "console_line" && typeof maybeText === "string") {
-        setLines((prev) => [...prev.slice(-999), maybeText]);
+        setLines((prev) => [...prev, maybeText].slice(-1000));
+        return;
+      }
+      if (event.type === "console_line_batch" && Array.isArray(event.lines)) {
+        setLines((prev) => [...prev, ...event.lines].slice(-1000));
       }
     });
     return () => ws.close();
