@@ -33,13 +33,19 @@ export default function Dashboard() {
   const [portsError, setPortsError] = useState("");
   const [currentLogFileName, setCurrentLogFileName] = useState("");
   const [lastSeenCriticalCrashCount, setLastSeenCriticalCrashCount] = useState(0);
+  const [criticalCrashKeywordInput, setCriticalCrashKeywordInput] = useState("");
+  const [lockedCriticalCrashKeywords, setLockedCriticalCrashKeywords] = useState<string[]>([]);
   const [downloadNotice, setDownloadNotice] = useState<{ message: string; tone: "blue" | "green" } | null>(null);
 
   useEffect(() => {
     const ws = connectDashboardWebSocket((event) => {
       const maybeText = (event as { text?: unknown }).text;
       if (event.type === "console_line" && typeof maybeText === "string") {
-        setLines((prev) => [...prev.slice(-999), maybeText]);
+        setLines((prev) => [...prev, maybeText].slice(-1000));
+        return;
+      }
+      if (event.type === "console_line_batch" && Array.isArray(event.lines)) {
+        setLines((prev) => [...prev, ...event.lines].slice(-1000));
       }
     });
     return () => ws.close();
@@ -129,6 +135,26 @@ export default function Dashboard() {
     }, 3000);
     return () => window.clearTimeout(timer);
   }, [downloadNotice]);
+
+  function handleLockCriticalCrashKeyword() {
+    const keyword = criticalCrashKeywordInput.trim();
+    if (!keyword) {
+      return;
+    }
+    setLockedCriticalCrashKeywords((prev) => {
+      if (prev.some((item) => item.toLowerCase() === keyword.toLowerCase())) {
+        return prev;
+      }
+      return [...prev, keyword];
+    });
+    setCriticalCrashKeywordInput("");
+  }
+
+  function handleRemoveCriticalCrashKeyword(keywordToRemove: string) {
+    setLockedCriticalCrashKeywords((prev) =>
+      prev.filter((item) => item.toLowerCase() !== keywordToRemove.toLowerCase()),
+    );
+  }
 
   const refreshSerialPorts = useCallback(async () => {
     setPortsLoading(true);
@@ -282,8 +308,14 @@ export default function Dashboard() {
   );
 
   const allCriticalCrashLines = useMemo(() => {
-    return lines.filter((line) => CRITICAL_CRASH_PATTERN.test(line));
-  }, [lines]);
+    return lines.filter((line) => {
+      if (CRITICAL_CRASH_PATTERN.test(line)) {
+        return true;
+      }
+      const lowerCasedLine = line.toLowerCase();
+      return lockedCriticalCrashKeywords.some((keyword) => lowerCasedLine.includes(keyword.toLowerCase()));
+    });
+  }, [lines, lockedCriticalCrashKeywords]);
 
   const newCriticalCrashCount = Math.max(0, allCriticalCrashLines.length - lastSeenCriticalCrashCount);
   const criticalCrashRows = useMemo(() => {
@@ -345,6 +377,46 @@ export default function Dashboard() {
                 </button>
               </div>
             </div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <input
+                value={criticalCrashKeywordInput}
+                onChange={(e) => setCriticalCrashKeywordInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleLockCriticalCrashKeyword();
+                  }
+                }}
+                placeholder="Lock in critical crash keyword"
+                style={{ minWidth: 220, flex: "1 1 220px" }}
+              />
+              <button type="button" onClick={handleLockCriticalCrashKeyword}>
+                Lock in
+              </button>
+            </div>
+            {lockedCriticalCrashKeywords.length > 0 ? (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                {lockedCriticalCrashKeywords.map((keyword) => (
+                  <button
+                    key={keyword}
+                    type="button"
+                    onClick={() => handleRemoveCriticalCrashKeyword(keyword)}
+                    title="Remove keyword"
+                    style={{
+                      border: "1px solid #f3b7b7",
+                      background: "#fff",
+                      borderRadius: 999,
+                      padding: "2px 8px",
+                      fontSize: 12,
+                      color: "#4a1515",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {keyword} x
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <div
               style={{
                 border: "1px solid #f3b7b7",

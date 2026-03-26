@@ -35,6 +35,7 @@ class SerialWorker:
         replay_interval_ms: int = 100,
     ) -> None:
         self.close()
+        self.parser.reset()
 
         with self._lock:
             self._stop_event.clear()

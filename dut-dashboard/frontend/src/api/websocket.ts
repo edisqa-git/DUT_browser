@@ -16,16 +16,32 @@ export type WifiClient = {
   [key: string]: unknown;
 };
 
+export type SnapshotPayload = {
+  test_count: number;
+  device_ts: string;
+  cpu: Record<string, CpuCore>;
+  wifi_clients?: Record<string, { total_size: number; clients: WifiClient[] }>;
+};
+
+export type SnapshotDelta = {
+  test_count?: number;
+  device_ts?: string;
+  cpu?: Record<string, CpuCore>;
+  cpu_removed?: string[];
+  wifi_clients?: Record<string, { total_size: number; clients: WifiClient[] }>;
+  wifi_clients_removed?: string[];
+};
+
 export type DashboardEvent =
   | { type: "console_line"; text: string }
+  | { type: "console_line_batch"; lines: string[] }
   | {
       type: "snapshot_update";
-      snapshot: {
-        test_count: number;
-        device_ts: string;
-        cpu: Record<string, CpuCore>;
-        wifi_clients?: Record<string, { total_size: number; clients: WifiClient[] }>;
-      };
+      snapshot: SnapshotPayload;
+    }
+  | {
+      type: "snapshot_delta";
+      delta: SnapshotDelta;
     }
   | {
       type: "wifi_clients_update";
@@ -38,11 +54,25 @@ export type DashboardEvent =
 export function connectDashboardWebSocket(onEvent: (event: DashboardEvent) => void): WebSocket {
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
   const ws = new WebSocket(`${protocol}://${window.location.host}/ws`);
+  let latestSnapshot: SnapshotPayload | null = null;
 
   ws.onmessage = (message: MessageEvent<string>) => {
     try {
       const event = JSON.parse(message.data) as DashboardEvent;
       if (event && typeof event === "object" && "type" in event) {
+        if (event.type === "snapshot_update") {
+          latestSnapshot = event.snapshot;
+          onEvent(event);
+          return;
+        }
+        if (event.type === "snapshot_delta") {
+          if (!latestSnapshot) {
+            return;
+          }
+          latestSnapshot = applySnapshotDelta(latestSnapshot, event.delta);
+          onEvent({ type: "snapshot_update", snapshot: latestSnapshot });
+          return;
+        }
         onEvent(event);
       }
     } catch {
@@ -51,4 +81,33 @@ export function connectDashboardWebSocket(onEvent: (event: DashboardEvent) => vo
   };
 
   return ws;
+}
+
+function applySnapshotDelta(base: SnapshotPayload, delta: SnapshotDelta): SnapshotPayload {
+  const nextCpu = { ...base.cpu };
+  if (delta.cpu_removed) {
+    for (const coreId of delta.cpu_removed) {
+      delete nextCpu[coreId];
+    }
+  }
+  if (delta.cpu) {
+    Object.assign(nextCpu, delta.cpu);
+  }
+
+  const nextWifi = { ...(base.wifi_clients ?? {}) };
+  if (delta.wifi_clients_removed) {
+    for (const radio of delta.wifi_clients_removed) {
+      delete nextWifi[radio];
+    }
+  }
+  if (delta.wifi_clients) {
+    Object.assign(nextWifi, delta.wifi_clients);
+  }
+
+  return {
+    test_count: delta.test_count ?? base.test_count,
+    device_ts: delta.device_ts ?? base.device_ts,
+    cpu: nextCpu,
+    wifi_clients: nextWifi,
+  };
 }
