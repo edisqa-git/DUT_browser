@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.tauri.app/config/1",
+  "build": {
+    "beforeBuildCommand": "npm --prefix ../.. run build:web && npm --prefix ../.. run build:backend",
+    "beforeDevCommand": "npm --prefix ../.. run dev --workspace dut-dashboard/frontend -- --host 127.0.0.1 --port 5173",
+    "devPath": "http://127.0.0.1:5173",
+    "distDir": "../../dut-dashboard/frontend/dist"
+  },
+  "package": {
+    "productName": "DUT Browser",
+    "version": "1.0.0"
+  },
+  "tauri": {
+    "bundle": {
+      "active": true,
+      "identifier": "com.dutbrowser.app",
+      "resources": [
+        "../resources/runtime/**/*"
+      ]
+    },
+    "security": {
+      "csp": null
+    },
+    "windows": [
+      {
+        "label": "main",
+        "title": "DUT Browser",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1200,
+        "minHeight": 760,
+        "resizable": true
+      }
+    ]
+  }
+}

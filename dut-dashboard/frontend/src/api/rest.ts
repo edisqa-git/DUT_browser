@@ -1,3 +1,5 @@
+import { apiUrl } from "./runtime";
+
 export type OpenSerialParams = {
   port: string;
   baudrate: number;
@@ -18,8 +20,33 @@ export type SerialPortInfo = {
   hwid: string;
 };
 
+export type HealthResponse = {
+  ok: boolean;
+  phase: string;
+  version: string;
+};
+
+export type AppMeta = {
+  product_name: string;
+  current_version: string;
+  repository: string;
+  releases_page: string;
+};
+
+export type UpdateCheckResponse = {
+  ok: boolean;
+  current_version: string;
+  latest_version: string;
+  update_available: boolean;
+  message: string;
+  source: string;
+  repository: string;
+  checked_at: string;
+  releases_page: string;
+};
+
 async function post<T>(url: string, body: unknown): Promise<T> {
-  const response = await fetch(url, {
+  const response = await fetch(apiUrl(url), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -31,7 +58,7 @@ async function post<T>(url: string, body: unknown): Promise<T> {
 }
 
 async function get<T>(url: string): Promise<T> {
-  const response = await fetch(url);
+  const response = await fetch(apiUrl(url));
   if (!response.ok) {
     throw new Error(await response.text());
   }
@@ -55,6 +82,19 @@ export async function listSerialPorts(): Promise<SerialPortInfo[]> {
   return result.ports;
 }
 
+export async function getHealth(): Promise<HealthResponse> {
+  return get<HealthResponse>("/health");
+}
+
+export async function getAppMeta(): Promise<AppMeta> {
+  return get<AppMeta>("/api/app/meta");
+}
+
+export async function getUpdateCheck(force = false): Promise<UpdateCheckResponse> {
+  const suffix = force ? "?force=true" : "";
+  return get<UpdateCheckResponse>(`/api/app/update-check${suffix}`);
+}
+
 export function getSerialLogDownloadUrl(fileName: string): string {
-  return `/api/serial/logs/${encodeURIComponent(fileName)}`;
+  return apiUrl(`/api/serial/logs/${encodeURIComponent(fileName)}`);
 }

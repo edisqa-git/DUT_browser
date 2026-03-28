@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   closeSerial,
+  getAppMeta,
+  getHealth,
   getSerialLogDownloadUrl,
+  getUpdateCheck,
   listSerialPorts,
   openSerial,
   sendSerial,
@@ -23,6 +26,14 @@ function choosePreferredPort(ports: SerialPortInfo[]): string {
 
 export default function Dashboard() {
   const [lines, setLines] = useState<string[]>([]);
+  const [appName, setAppName] = useState("DUT Browser");
+  const [appVersion, setAppVersion] = useState("unknown");
+  const [backendReady, setBackendReady] = useState(false);
+  const [startupMessage, setStartupMessage] = useState("Starting local engine...");
+  const [startupTone, setStartupTone] = useState<"neutral" | "success" | "error">("neutral");
+  const [updateMessage, setUpdateMessage] = useState("");
+  const [updateTone, setUpdateTone] = useState<"neutral" | "warning" | "error">("neutral");
+  const [releaseUrl, setReleaseUrl] = useState("");
   const [mode, setMode] = useState<"serial" | "replay">("serial");
   const [port, setPort] = useState(DEFAULT_SERIAL_PORT);
   const [baudrate, setBaudrate] = useState(115200);
@@ -38,6 +49,78 @@ export default function Dashboard() {
   const [downloadNotice, setDownloadNotice] = useState<{ message: string; tone: "blue" | "green" } | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+
+    async function bootstrap() {
+      try {
+        const meta = await getAppMeta();
+        if (cancelled) {
+          return;
+        }
+        setAppName(meta.product_name);
+        setAppVersion(meta.current_version);
+        setReleaseUrl(meta.releases_page);
+      } catch {
+        if (!cancelled) {
+          setReleaseUrl("");
+        }
+      }
+
+      for (let attempt = 1; attempt <= 30; attempt += 1) {
+        try {
+          const health = await getHealth();
+          if (cancelled) {
+            return;
+          }
+
+          setBackendReady(true);
+          setAppVersion(health.version);
+          setStartupTone("success");
+          setStartupMessage(`Local engine ready on version ${health.version}.`);
+
+          const update = await getUpdateCheck();
+          if (cancelled) {
+            return;
+          }
+
+          setReleaseUrl(update.releases_page);
+          if (update.update_available) {
+            setUpdateTone("warning");
+            setUpdateMessage(update.message);
+          } else if (!update.ok) {
+            setUpdateTone("error");
+            setUpdateMessage(update.message);
+          } else {
+            setUpdateTone("neutral");
+            setUpdateMessage(update.message);
+          }
+          return;
+        } catch {
+          if (cancelled) {
+            return;
+          }
+          setStartupTone("neutral");
+          setStartupMessage(`Starting local engine... attempt ${attempt}/30`);
+          await new Promise((resolve) => window.setTimeout(resolve, 1000));
+        }
+      }
+
+      if (!cancelled) {
+        setStartupTone("error");
+        setStartupMessage("Local engine failed to start. Restart the app and inspect backend logs.");
+      }
+    }
+
+    void bootstrap();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!backendReady) {
+      return;
+    }
     const ws = connectDashboardWebSocket((event) => {
       const maybeText = (event as { text?: unknown }).text;
       if (event.type === "console_line" && typeof maybeText === "string") {
@@ -49,7 +132,7 @@ export default function Dashboard() {
       }
     });
     return () => ws.close();
-  }, []);
+  }, [backendReady]);
 
   async function handleOpen() {
     const response = await openSerial({
@@ -182,10 +265,10 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    if (mode === "serial") {
+    if (backendReady && mode === "serial") {
       void refreshSerialPorts();
     }
-  }, [mode, refreshSerialPorts]);
+  }, [backendReady, mode, refreshSerialPorts]);
 
   const controls = useMemo(
     () => (
@@ -193,6 +276,7 @@ export default function Dashboard() {
         <div style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: 8, alignItems: "center" }}>
           <button
             onClick={handleClose}
+            disabled={!backendReady}
             style={{
               width: 28,
               height: 28,
@@ -231,12 +315,13 @@ export default function Dashboard() {
                   </option>
                 ))}
               </select>
-              <button type="button" onClick={() => void refreshSerialPorts()} disabled={portsLoading}>
+              <button type="button" onClick={() => void refreshSerialPorts()} disabled={!backendReady || portsLoading}>
                 {portsLoading ? "Refreshing..." : "Refresh Ports"}
               </button>
               <button
                 type="button"
                 onClick={() => void handleOpen()}
+                disabled={!backendReady}
                 style={{
                   background: "#1976d2",
                   color: "#fff",
@@ -277,6 +362,7 @@ export default function Dashboard() {
             <button
               type="button"
               onClick={() => void handleOpen()}
+              disabled={!backendReady}
               style={{
                 background: "#1976d2",
                 color: "#fff",
@@ -302,6 +388,7 @@ export default function Dashboard() {
       serialPorts,
       portsLoading,
       portsError,
+      backendReady,
       refreshSerialPorts,
       currentLogFileName,
     ],
@@ -328,7 +415,41 @@ export default function Dashboard() {
 
   return (
     <div style={{ fontFamily: "sans-serif", maxWidth: 1100, margin: "0 auto", padding: 16 }}>
-      <h1 style={{ textAlign: "center" }}>DUT Dashboard - Milestone 3</h1>
+      <h1 style={{ textAlign: "center", marginBottom: 8 }}>{appName}</h1>
+      <div style={{ textAlign: "center", color: "#555", marginBottom: 12 }}>Desktop version {appVersion}</div>
+      <div
+        style={{
+          border: "1px solid",
+          borderColor: startupTone === "error" ? "#f5c2c7" : startupTone === "success" ? "#b7dfb9" : "#d7d7d7",
+          background: startupTone === "error" ? "#fff1f1" : startupTone === "success" ? "#eefbf0" : "#f7f7f7",
+          color: startupTone === "error" ? "#7f1d1d" : startupTone === "success" ? "#166534" : "#333",
+          borderRadius: 8,
+          padding: "10px 12px",
+          marginBottom: 12,
+        }}
+      >
+        {startupMessage}
+      </div>
+      {updateMessage ? (
+        <div
+          style={{
+            border: "1px solid",
+            borderColor: updateTone === "warning" ? "#e0b84d" : updateTone === "error" ? "#f5c2c7" : "#d7d7d7",
+            background: updateTone === "warning" ? "#fff7e6" : updateTone === "error" ? "#fff1f1" : "#f7f7f7",
+            color: updateTone === "warning" ? "#7c5200" : updateTone === "error" ? "#7f1d1d" : "#333",
+            borderRadius: 8,
+            padding: "10px 12px",
+            marginBottom: 12,
+          }}
+        >
+          <span>{updateMessage}</span>
+          {releaseUrl ? (
+            <a href={releaseUrl} target="_blank" rel="noreferrer" style={{ marginLeft: 8 }}>
+              Releases
+            </a>
+          ) : null}
+        </div>
+      ) : null}
       {controls}
       <div style={{ border: "1px solid #ddd", padding: 12, marginBottom: 12 }}>
         <div
@@ -342,10 +463,10 @@ export default function Dashboard() {
           <div>
             <h3 style={{ marginTop: 0, marginBottom: 8 }}>CPU Monitor Commands</h3>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start" }}>
-              <button type="button" onClick={() => void handleRunTop()}>
+              <button type="button" onClick={() => void handleRunTop()} disabled={!backendReady}>
                 Memory Info
               </button>
-              <button type="button" onClick={() => void handleStopCommand()}>
+              <button type="button" onClick={() => void handleStopCommand()} disabled={!backendReady}>
                 Stop
               </button>
             </div>
@@ -456,7 +577,7 @@ export default function Dashboard() {
         lines={lines}
         onSend={handleSend}
         onDownloadLog={handleDownloadLog}
-        canDownloadLog={Boolean(currentLogFileName)}
+        canDownloadLog={backendReady && Boolean(currentLogFileName)}
       />
       {downloadNotice ? (
         <div

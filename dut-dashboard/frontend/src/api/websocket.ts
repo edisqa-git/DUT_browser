@@ -52,8 +52,7 @@ export type DashboardEvent =
   | { type: string; [key: string]: unknown };
 
 export function connectDashboardWebSocket(onEvent: (event: DashboardEvent) => void): WebSocket {
-  const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-  const ws = new WebSocket(`${protocol}://${window.location.host}/ws`);
+  const ws = new WebSocket(websocketUrl("/ws"));
   let latestSnapshot: SnapshotPayload | null = null;
 
   ws.onmessage = (message: MessageEvent<string>) => {
@@ -111,3 +110,4 @@ function applySnapshotDelta(base: SnapshotPayload, delta: SnapshotDelta): Snapsh
     wifi_clients: nextWifi,
   };
 }
+import { websocketUrl } from "./runtime";

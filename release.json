@@ -1,0 +1,7 @@
+{
+  "product_name": "DUT Browser",
+  "github_repository": "nelsonchang/DUT_browser",
+  "releases_api": "https://api.github.com/repos/nelsonchang/DUT_browser/releases/latest",
+  "tags_api": "https://api.github.com/repos/nelsonchang/DUT_browser/tags",
+  "releases_page": "https://github.com/nelsonchang/DUT_browser/releases"
+}

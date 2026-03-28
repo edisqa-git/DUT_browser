@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "build": "tsc && vite build",
     "sanity": "node -e \"console.log('frontend milestone-2 sanity ok')\""
   },
   "dependencies": {
+    "@tauri-apps/api": "^1.6.0",
     "@codemirror/commands": "^6.10.3",
     "@codemirror/state": "^6.6.0",
     "@codemirror/view": "^6.40.0",
