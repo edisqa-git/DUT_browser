@@ -1,3 +1,5 @@
+import { websocketUrl } from "./runtime";
+
 export type CpuCore = {
   usr: number;
   sys: number;
@@ -60,7 +62,7 @@ export function connectDashboardWebSocket(onEvent: (event: DashboardEvent) => vo
       const event = JSON.parse(message.data) as DashboardEvent;
       if (event && typeof event === "object" && "type" in event) {
         if (event.type === "snapshot_update") {
-          latestSnapshot = event.snapshot;
+          latestSnapshot = (event as Extract<DashboardEvent, { type: "snapshot_update" }>).snapshot;
           onEvent(event);
           return;
         }
@@ -68,7 +70,10 @@ export function connectDashboardWebSocket(onEvent: (event: DashboardEvent) => vo
           if (!latestSnapshot) {
             return;
           }
-          latestSnapshot = applySnapshotDelta(latestSnapshot, event.delta);
+          latestSnapshot = applySnapshotDelta(
+            latestSnapshot,
+            (event as Extract<DashboardEvent, { type: "snapshot_delta" }>).delta,
+          );
           onEvent({ type: "snapshot_update", snapshot: latestSnapshot });
           return;
         }
@@ -110,4 +115,3 @@ function applySnapshotDelta(base: SnapshotPayload, delta: SnapshotDelta): Snapsh
     wifi_clients: nextWifi,
   };
 }
-import { websocketUrl } from "./runtime";

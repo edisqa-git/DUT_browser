@@ -127,8 +127,13 @@ export default function Dashboard() {
         setLines((prev) => [...prev, maybeText].slice(-1000));
         return;
       }
-      if (event.type === "console_line_batch" && Array.isArray(event.lines)) {
-        setLines((prev) => [...prev, ...event.lines].slice(-1000));
+      const batchLines = (event as { lines?: unknown }).lines;
+      if (
+        event.type === "console_line_batch" &&
+        Array.isArray(batchLines) &&
+        batchLines.every((line): line is string => typeof line === "string")
+      ) {
+        setLines((prev) => [...prev, ...batchLines].slice(-1000));
       }
     });
     return () => ws.close();
