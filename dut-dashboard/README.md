@@ -1,4 +1,6 @@
-# DUT Local Monitoring Dashboard (Milestone 4)
+# DUT Local Monitoring Dashboard
+
+DEPRECATED: this file documents the legacy split frontend/backend workflow and remains only as subsystem reference material. Product onboarding now starts at the repository root `README.md`.
 
 Milestone 4 implements:
 - realtime `console_line` streaming

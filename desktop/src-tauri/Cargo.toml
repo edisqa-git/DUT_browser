@@ -1,0 +1,18 @@
+[package]
+name = "dut-browser"
+version = "1.0.0"
+description = "Desktop shell for DUT Browser"
+authors = ["DUT Browser Team"]
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "1.5", features = [] }
+
+[dependencies]
+anyhow = "1"
+tauri = { version = "1.6", features = ["dialog-all"] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

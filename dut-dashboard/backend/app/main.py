@@ -1,9 +1,12 @@
 import asyncio
+from argparse import ArgumentParser
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
+from app.api.app_api import router as app_router
 from app.api.analyzer_api import router as analyzer_router
 from app.api.serial_api import router as serial_router
 from app.config import ANALYZER_OUTPUT_DIR, SNAPSHOT_FILE
@@ -11,9 +14,24 @@ from app.parser.sysmon_parser import SysMonParser
 from app.serial.serial_worker import SerialWorker
 from app.services.analyzer_service import AnalyzerService
 from app.services.snapshot_store import SnapshotStore
+from app.services.version_service import VersionService
+from app.versioning import read_version
 from app.websocket.ws_manager import WebSocketManager
 
 app = FastAPI(title="DUT Local Monitoring Dashboard")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+        "http://tauri.localhost",
+        "tauri://localhost",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.include_router(app_router)
 app.include_router(serial_router)
 app.include_router(analyzer_router)
 
@@ -31,11 +49,12 @@ async def on_startup() -> None:
     app.state.parser = SysMonParser(on_event=on_event)
     app.state.serial_worker = SerialWorker(app.state.parser)
     app.state.analyzer_service = AnalyzerService()
+    app.state.version_service = VersionService()
 
 
 @app.get("/health")
 def health() -> dict:
-    return {"ok": True, "phase": "milestone-4"}
+    return {"ok": True, "phase": "desktop-shell", "version": read_version()}
 
 
 @app.get("/api/download/{file_name}")
@@ -67,4 +86,10 @@ async def websocket_endpoint(ws: WebSocket) -> None:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+    parser = ArgumentParser(description="DUT Browser backend")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--reload", action="store_true")
+    args = parser.parse_args()
+
+    uvicorn.run("app.main:app", host=args.host, port=args.port, reload=args.reload)

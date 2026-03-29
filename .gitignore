@@ -4,9 +4,16 @@ __pycache__/
 
 .venv/
 venv/
+.venv.previous/
+.venv.update.tmp/
+.npm-update-cache/
 
 dut-dashboard/frontend/node_modules/
+node_modules/
+dist/
+target/
 
 dut-dashboard/logs/analyzer_output/
 dut-dashboard/logs/snapshots.jsonl
 dut-dashboard/logs/dut-session-*.log
+desktop/resources/backend/

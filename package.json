@@ -1,0 +1,21 @@
+{
+  "name": "dut-browser",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Single-entry desktop shell for the DUT monitoring tool.",
+  "workspaces": [
+    "dut-dashboard/frontend"
+  ],
+  "scripts": {
+    "dev": "tauri dev --config desktop/src-tauri/tauri.conf.json",
+    "build:web": "npm run build --workspace dut-dashboard/frontend",
+    "package": "tauri build --config desktop/src-tauri/tauri.conf.json",
+    "build:backend": "python scripts/build_backend.py",
+    "release": "npm run build:backend && npm run package",
+    "update": "sh ./update.sh",
+    "update:windows": "powershell -ExecutionPolicy Bypass -File .\\update.ps1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^1.6.3"
+  }
+}
