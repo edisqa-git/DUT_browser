@@ -1,10 +1,10 @@
 {
   "$schema": "https://schema.tauri.app/config/1",
   "build": {
-    "beforeBuildCommand": "npm --prefix ../.. run build:web && npm --prefix ../.. run build:backend",
-    "beforeDevCommand": "npm --prefix ../.. run dev --workspace dut-dashboard/frontend -- --host 127.0.0.1 --port 5173",
+    "beforeDevCommand": "npm --prefix ../dut-dashboard/frontend run dev -- --host 127.0.0.1 --port 5173 & npm run dev:backend",
+    "beforeBuildCommand": "npm --prefix .. run build:web && npm --prefix .. run build:backend",
     "devPath": "http://127.0.0.1:5173",
-    "distDir": "../../dut-dashboard/frontend/dist"
+    "distDir": "../dut-dashboard/frontend/dist"
   },
   "package": {
     "productName": "DUT Browser",
