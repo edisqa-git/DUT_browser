@@ -8,9 +8,10 @@
   ],
   "scripts": {
     "dev": "tauri dev --config desktop/src-tauri/tauri.conf.json",
+    "dev:backend": "cd dut-dashboard/backend && source .venv/bin/activate && python3 -m app.main",
     "build:web": "npm run build --workspace dut-dashboard/frontend",
     "package": "tauri build --config desktop/src-tauri/tauri.conf.json",
-    "build:backend": "python scripts/build_backend.py",
+    "build:backend": "python3 scripts/build_backend.py",
     "release": "npm run build:backend && npm run package",
     "update": "sh ./update.sh",
     "update:windows": "powershell -ExecutionPolicy Bypass -File .\\update.ps1"

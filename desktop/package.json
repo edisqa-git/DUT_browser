@@ -1,0 +1,6 @@
+{
+  "private": true,
+  "scripts": {
+    "dev:backend": "npm --prefix .. run dev:backend"
+  }
+}

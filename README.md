@@ -1,5 +1,12 @@
 # DUT Browser
 
+## Quick Start
+
+```bash
+bash scripts/bootstrap.sh
+npm run dev
+```
+
 DUT Browser is now structured as a single-entry desktop application for QA and test workflows. The product entrypoint is the desktop shell, which owns backend startup, opens the UI, and checks for updates on startup.
 
 ## Status
