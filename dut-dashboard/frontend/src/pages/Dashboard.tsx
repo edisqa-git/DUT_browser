@@ -11,8 +11,10 @@ import {
   sendSerial,
   SerialPortInfo,
 } from "../api/rest";
-import { connectDashboardWebSocket } from "../api/websocket";
+import { connectDashboardWebSocket, SnapshotPayload, WifiClient } from "../api/websocket";
+import ClientsPanel from "../components/ClientsPanel";
 import ConsolePanel from "../components/ConsolePanel";
+import CpuChart, { CpuPoint } from "../components/CpuChart";
 const DEFAULT_SERIAL_PORT = "/dev/ttyUSB0";
 const CRITICAL_CRASH_PATTERN = /\b(kernel panic|q6 crash|watchdog(?:\s+reset|\s+bite|\s+timeout)?)\b/i;
 
@@ -47,6 +49,13 @@ export default function Dashboard() {
   const [criticalCrashKeywordInput, setCriticalCrashKeywordInput] = useState("");
   const [lockedCriticalCrashKeywords, setLockedCriticalCrashKeywords] = useState<string[]>([]);
   const [downloadNotice, setDownloadNotice] = useState<{ message: string; tone: "blue" | "green" } | null>(null);
+  const [cpuHistory, setCpuHistory] = useState<CpuPoint[]>([]);
+  const [cpuCoreKeys, setCpuCoreKeys] = useState<string[]>([]);
+  const [clientsByRadio, setClientsByRadio] = useState<Record<"2G" | "5G" | "6G", WifiClient[]>>({
+    "2G": [],
+    "5G": [],
+    "6G": [],
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -122,18 +131,34 @@ export default function Dashboard() {
       return;
     }
     const ws = connectDashboardWebSocket((event) => {
-      const maybeText = (event as { text?: unknown }).text;
-      if (event.type === "console_line" && typeof maybeText === "string") {
-        setLines((prev) => [...prev, maybeText].slice(-1000));
+      if (event.type === "console_line") {
+        const { text } = event as { type: string; text: string };
+        setLines((prev) => [...prev, text].slice(-1000));
         return;
       }
-      const batchLines = (event as { lines?: unknown }).lines;
-      if (
-        event.type === "console_line_batch" &&
-        Array.isArray(batchLines) &&
-        batchLines.every((line): line is string => typeof line === "string")
-      ) {
+      if (event.type === "console_line_batch") {
+        const { lines: batchLines } = event as { type: string; lines: string[] };
         setLines((prev) => [...prev, ...batchLines].slice(-1000));
+        return;
+      }
+      if (event.type === "snapshot_update") {
+        const { snapshot } = event as { type: string; snapshot: SnapshotPayload };
+        const coreIds = Object.keys(snapshot.cpu).sort((a, b) => Number(a) - Number(b));
+        const point: CpuPoint = { device_ts: snapshot.device_ts };
+        for (const id of coreIds) {
+          const core = snapshot.cpu[id];
+          point[`CPU${id}`] = parseFloat((100 - core.idle).toFixed(2));
+        }
+        setCpuHistory((prev) => [...prev, point].slice(-60));
+        const newKeys = coreIds.map((id) => `CPU${id}`);
+        setCpuCoreKeys((prev) =>
+          prev.length === newKeys.length && prev.every((k, i) => k === newKeys[i]) ? prev : newKeys,
+        );
+        return;
+      }
+      if (event.type === "wifi_clients_update") {
+        const { radio, clients } = event as { type: string; radio: "2G" | "5G" | "6G"; clients: WifiClient[] };
+        setClientsByRadio((prev) => ({ ...prev, [radio]: clients }));
       }
     });
     return () => ws.close();
@@ -578,6 +603,8 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+      {cpuHistory.length > 0 ? <CpuChart data={cpuHistory} coreKeys={cpuCoreKeys} /> : null}
+      {backendReady ? <ClientsPanel clientsByRadio={clientsByRadio} /> : null}
       <ConsolePanel
         lines={lines}
         onSend={handleSend}
