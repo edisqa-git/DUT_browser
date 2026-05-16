@@ -37,7 +37,8 @@ export default function Dashboard() {
   const [updateTone, setUpdateTone] = useState<"neutral" | "warning" | "error">("neutral");
   const [releaseUrl, setReleaseUrl] = useState("");
   const [mode, setMode] = useState<"serial" | "replay">("serial");
-  const [port, setPort] = useState(DEFAULT_SERIAL_PORT);
+  const [selectedPort, setSelectedPort] = useState(DEFAULT_SERIAL_PORT);
+  const [manualPort, setManualPort] = useState("");
   const [baudrate, setBaudrate] = useState(115200);
   const [replayPath, setReplayPath] = useState("logs/sample.log");
   const [replayIntervalMs, setReplayIntervalMs] = useState(100);
@@ -164,10 +165,12 @@ export default function Dashboard() {
     return () => ws.close();
   }, [backendReady]);
 
+  const effectivePort = manualPort.trim() || selectedPort;
+
   async function handleOpen() {
     const response = await openSerial({
       mode,
-      port,
+      port: effectivePort,
       baudrate,
       replay_path: mode === "replay" ? replayPath : undefined,
       replay_interval_ms: replayIntervalMs,
@@ -277,7 +280,7 @@ export default function Dashboard() {
       setSerialPorts(ports);
       if (ports.length > 0) {
         const preferredPort = choosePreferredPort(ports);
-        setPort((prev) => {
+        setSelectedPort((prev) => {
           if (ports.some((portInfo) => portInfo.device === prev)) {
             return prev;
           }
@@ -336,8 +339,16 @@ export default function Dashboard() {
 
         {mode === "serial" ? (
           <div style={{ display: "grid", gap: 8 }}>
-            <div style={{ display: "flex", gap: 8 }}>
-              <select value={port} onChange={(e) => setPort(e.target.value)} style={{ width: 240 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <select
+                value={selectedPort}
+                onChange={(e) => setSelectedPort(e.target.value)}
+                style={{
+                  width: 240,
+                  opacity: manualPort.trim() ? 0.45 : 1,
+                  pointerEvents: manualPort.trim() ? "none" : "auto",
+                }}
+              >
                 <option value="">Select detected serial port</option>
                 {serialPorts.map((serialPort) => (
                   <option key={serialPort.device} value={serialPort.device}>
@@ -365,12 +376,39 @@ export default function Dashboard() {
                 Open
               </button>
             </div>
-            <input
-              value={port}
-              onChange={(e) => setPort(e.target.value)}
-              placeholder="Manual serial port override (optional, e.g. /dev/ttyUSB0)"
-              style={{ width: 240 }}
-            />
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
+                <input
+                  value={manualPort}
+                  onChange={(e) => setManualPort(e.target.value)}
+                  placeholder="Manual override (e.g. /dev/ttyUSB0)"
+                  style={{ width: 240, paddingRight: manualPort ? 24 : undefined }}
+                />
+                {manualPort ? (
+                  <button
+                    type="button"
+                    onClick={() => setManualPort("")}
+                    title="Clear manual override"
+                    style={{
+                      position: "absolute",
+                      right: 4,
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      fontSize: 14,
+                      color: "#666",
+                      padding: "0 2px",
+                      lineHeight: 1,
+                    }}
+                  >
+                    ×
+                  </button>
+                ) : null}
+              </div>
+            </div>
+            {manualPort.trim() ? (
+              <div style={{ fontSize: 11, color: "#1565c0" }}>Using manual port: {manualPort.trim()}</div>
+            ) : null}
             <input
               type="number"
               value={baudrate}
@@ -411,7 +449,8 @@ export default function Dashboard() {
     ),
     [
       mode,
-      port,
+      selectedPort,
+      manualPort,
       baudrate,
       replayPath,
       replayIntervalMs,
@@ -420,7 +459,6 @@ export default function Dashboard() {
       portsError,
       backendReady,
       refreshSerialPorts,
-      currentLogFileName,
     ],
   );
 

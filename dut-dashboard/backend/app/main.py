@@ -1,5 +1,7 @@
 import asyncio
+import json
 from argparse import ArgumentParser
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -15,10 +17,31 @@ from app.serial.serial_worker import SerialWorker
 from app.services.analyzer_service import AnalyzerService
 from app.services.snapshot_store import SnapshotStore
 from app.services.version_service import VersionService
+from app.tools import dispatch, list_tools
+from app.tools.context import AppContext
 from app.versioning import read_version
 from app.websocket.ws_manager import WebSocketManager
 
-app = FastAPI(title="DUT Local Monitoring Dashboard")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):  # type: ignore[type-arg]
+    ws_manager = WebSocketManager()
+    ws_manager.bind_loop(asyncio.get_running_loop())
+
+    def on_event(event: dict) -> None:
+        ws_manager.emit_from_thread(event)
+
+    app.state.ws_manager = ws_manager
+    app.state.snapshot_store = SnapshotStore(SNAPSHOT_FILE)
+    app.state.parser = SysMonParser(on_event=on_event)
+    app.state.serial_worker = SerialWorker(app.state.parser)
+    app.state.analyzer_service = AnalyzerService()
+    app.state.version_service = VersionService()
+
+    yield
+
+
+app = FastAPI(title="DUT Local Monitoring Dashboard", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -34,22 +57,6 @@ app.add_middleware(
 app.include_router(app_router)
 app.include_router(serial_router)
 app.include_router(analyzer_router)
-
-
-@app.on_event("startup")
-async def on_startup() -> None:
-    ws_manager = WebSocketManager()
-    ws_manager.bind_loop(asyncio.get_running_loop())
-
-    def on_event(event: dict) -> None:
-        ws_manager.emit_from_thread(event)
-
-    app.state.ws_manager = ws_manager
-    app.state.snapshot_store = SnapshotStore(SNAPSHOT_FILE)
-    app.state.parser = SysMonParser(on_event=on_event)
-    app.state.serial_worker = SerialWorker(app.state.parser)
-    app.state.analyzer_service = AnalyzerService()
-    app.state.version_service = VersionService()
 
 
 @app.get("/health")
@@ -74,9 +81,28 @@ def download_file(file_name: str) -> FileResponse:
 async def websocket_endpoint(ws: WebSocket) -> None:
     manager: WebSocketManager = app.state.ws_manager
     await manager.connect(ws)
+    ctx = AppContext.from_state(app.state)
     try:
         while True:
-            await ws.receive_text()
+            raw = await ws.receive_text()
+            try:
+                data = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if not isinstance(data, dict) or "tool" not in data:
+                continue
+            tool_name: str = data["tool"]
+            params: dict = data.get("params") or {}
+            request_id = data.get("request_id")
+            try:
+                result = list_tools() if tool_name == "list_tools" else dispatch(tool_name, params, ctx)
+                await ws.send_json(
+                    {"type": "tool_result", "tool": tool_name, "request_id": request_id, "ok": True, "data": result}
+                )
+            except Exception as exc:
+                await ws.send_json(
+                    {"type": "tool_result", "tool": tool_name, "request_id": request_id, "ok": False, "error": str(exc)}
+                )
     except WebSocketDisconnect:
         manager.disconnect(ws)
     except Exception:
