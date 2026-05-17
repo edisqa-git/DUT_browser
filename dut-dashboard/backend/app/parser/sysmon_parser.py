@@ -12,6 +12,7 @@ class SysMonParser:
     CPU_RE = re.compile(
         r"^CPU(\d+):\s*([\d.]+)% usr\s+([\d.]+)% sys\s+([\d.]+)% nic\s+([\d.]+)% idle\s+([\d.]+)% io\s+([\d.]+)% irq\s+([\d.]+)%%?\s+sirq\s*$"
     )
+    MEM_RE = re.compile(r"^Mem:\s*(\d+)K used,\s*(\d+)K free")
     CLIENT_MARKER_RE = re.compile(r"^--- CLIENTS Radio=(2G|5G|6G) ---\s*$")
     CONSOLE_BATCH_SIZE = 20
     CONSOLE_BATCH_MAX_LATENCY_SEC = 0.2
@@ -80,6 +81,20 @@ class SysMonParser:
         if self._pending_clients_radio is not None and text.startswith("{"):
             self._flush_console_lines()
             self._consume_clients_json(text)
+            return
+
+        mem_match = self.MEM_RE.match(text)
+        if mem_match:
+            used_kb = int(mem_match.group(1))
+            free_kb = int(mem_match.group(2))
+            self.on_event({
+                "type": "memory_update",
+                "used_kb": used_kb,
+                "free_kb": free_kb,
+                "total_kb": used_kb + free_kb,
+            })
+            if self._current_snapshot is not None:
+                self._current_snapshot["memory"] = {"used_kb": used_kb, "free_kb": free_kb}
             return
 
         if self._current_snapshot is None:

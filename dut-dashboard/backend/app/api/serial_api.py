@@ -17,6 +17,8 @@ from pydantic import BaseModel
 from serial.tools import list_ports
 
 from app.config import ANALYZER_SCRIPT, LOG_DIR
+from app.tools import dispatch
+from app.tools.context import AppContext
 
 router = APIRouter(prefix="/api/serial", tags=["serial"])
 
@@ -169,53 +171,34 @@ def zip_session_dir(session_dir: Path) -> Path:
 
 
 @router.get("/ports")
-def list_serial_ports() -> dict:
-    ports = []
-    for info in list_ports.comports():
-        ports.append(
-            {
-                "device": info.device,
-                "description": info.description or "",
-                "hwid": info.hwid or "",
-            }
-        )
-    return {"ports": ports}
+def list_serial_ports_http(request: Request) -> dict:
+    return dispatch("list_serial_ports", {}, AppContext.from_request(request))
 
 
 @router.post("/open")
-def open_serial(body: SerialOpenRequest, request: Request) -> dict:
+def open_serial_http(body: SerialOpenRequest, request: Request) -> dict:
     try:
-        serial_worker = request.app.state.serial_worker
-        serial_worker.open(
-            port=body.port,
-            baudrate=body.baudrate,
-            mode=body.mode,
-            replay_path=body.replay_path,
-            replay_interval_ms=body.replay_interval_ms,
-        )
+        return dispatch("open_serial", body.model_dump(), AppContext.from_request(request))
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"ok": True, "mode": body.mode, "log_path": serial_worker.current_log_path}
 
 
 @router.post("/close")
-def close_serial(request: Request) -> dict:
-    request.app.state.serial_worker.close()
-    return {"ok": True}
+def close_serial_http(request: Request) -> dict:
+    return dispatch("close_serial", {}, AppContext.from_request(request))
 
 
 @router.post("/send")
-def send_serial(body: SerialSendRequest, request: Request) -> dict:
+def send_serial_http(body: SerialSendRequest, request: Request) -> dict:
     try:
-        request.app.state.serial_worker.send(body.text)
+        return dispatch("send_serial", {"text": body.text}, AppContext.from_request(request))
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"ok": True}
 
 
 @router.get("/efficiency-report")
-def get_efficiency_report(request: Request) -> dict:
-    return request.app.state.parser.efficiency_report()
+def get_efficiency_report_http(request: Request) -> dict:
+    return dispatch("get_efficiency_report", {}, AppContext.from_request(request))
 
 
 @router.get("/logs/{file_name}")

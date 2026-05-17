@@ -11,8 +11,11 @@ import {
   sendSerial,
   SerialPortInfo,
 } from "../api/rest";
-import { connectDashboardWebSocket } from "../api/websocket";
+import { connectDashboardWebSocket, SnapshotPayload, WifiClient } from "../api/websocket";
+import ClientsPanel from "../components/ClientsPanel";
 import ConsolePanel from "../components/ConsolePanel";
+import CpuChart, { CpuPoint } from "../components/CpuChart";
+import MemoryChart, { MemPoint } from "../components/MemoryChart";
 const DEFAULT_SERIAL_PORT = "/dev/ttyUSB0";
 const CRITICAL_CRASH_PATTERN = /\b(kernel panic|q6 crash|watchdog(?:\s+reset|\s+bite|\s+timeout)?)\b/i;
 
@@ -35,7 +38,8 @@ export default function Dashboard() {
   const [updateTone, setUpdateTone] = useState<"neutral" | "warning" | "error">("neutral");
   const [releaseUrl, setReleaseUrl] = useState("");
   const [mode, setMode] = useState<"serial" | "replay">("serial");
-  const [port, setPort] = useState(DEFAULT_SERIAL_PORT);
+  const [selectedPort, setSelectedPort] = useState(DEFAULT_SERIAL_PORT);
+  const [manualPort, setManualPort] = useState("");
   const [baudrate, setBaudrate] = useState(115200);
   const [replayPath, setReplayPath] = useState("logs/sample.log");
   const [replayIntervalMs, setReplayIntervalMs] = useState(100);
@@ -47,6 +51,14 @@ export default function Dashboard() {
   const [criticalCrashKeywordInput, setCriticalCrashKeywordInput] = useState("");
   const [lockedCriticalCrashKeywords, setLockedCriticalCrashKeywords] = useState<string[]>([]);
   const [downloadNotice, setDownloadNotice] = useState<{ message: string; tone: "blue" | "green" } | null>(null);
+  const [cpuHistory, setCpuHistory] = useState<CpuPoint[]>([]);
+  const [cpuCoreKeys, setCpuCoreKeys] = useState<string[]>([]);
+  const [memHistory, setMemHistory] = useState<MemPoint[]>([]);
+  const [clientsByRadio, setClientsByRadio] = useState<Record<"2G" | "5G" | "6G", WifiClient[]>>({
+    "2G": [],
+    "5G": [],
+    "6G": [],
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -122,27 +134,56 @@ export default function Dashboard() {
       return;
     }
     const ws = connectDashboardWebSocket((event) => {
-      const maybeText = (event as { text?: unknown }).text;
-      if (event.type === "console_line" && typeof maybeText === "string") {
-        setLines((prev) => [...prev, maybeText].slice(-1000));
+      if (event.type === "console_line") {
+        const { text } = event as { type: string; text: string };
+        setLines((prev) => [...prev, text].slice(-1000));
         return;
       }
-      const batchLines = (event as { lines?: unknown }).lines;
-      if (
-        event.type === "console_line_batch" &&
-        Array.isArray(batchLines) &&
-        batchLines.every((line): line is string => typeof line === "string")
-      ) {
+      if (event.type === "console_line_batch") {
+        const { lines: batchLines } = event as { type: string; lines: string[] };
         setLines((prev) => [...prev, ...batchLines].slice(-1000));
+        return;
+      }
+      if (event.type === "snapshot_update") {
+        const { snapshot } = event as { type: string; snapshot: SnapshotPayload };
+        const coreIds = Object.keys(snapshot.cpu).sort((a, b) => Number(a) - Number(b));
+        const point: CpuPoint = { device_ts: snapshot.device_ts };
+        for (const id of coreIds) {
+          const core = snapshot.cpu[id];
+          point[`CPU${id}`] = parseFloat((100 - core.idle).toFixed(2));
+        }
+        setCpuHistory((prev) => [...prev, point].slice(-60));
+        const newKeys = coreIds.map((id) => `CPU${id}`);
+        setCpuCoreKeys((prev) =>
+          prev.length === newKeys.length && prev.every((k, i) => k === newKeys[i]) ? prev : newKeys,
+        );
+        return;
+      }
+      if (event.type === "wifi_clients_update") {
+        const { radio, clients } = event as { type: string; radio: "2G" | "5G" | "6G"; clients: WifiClient[] };
+        setClientsByRadio((prev) => ({ ...prev, [radio]: clients }));
+        return;
+      }
+      if (event.type === "memory_update") {
+        const { used_kb, free_kb, total_kb } = event as { type: string; used_kb: number; free_kb: number; total_kb: number };
+        const point: MemPoint = {
+          ts: new Date().toLocaleTimeString(),
+          used_mb: parseFloat((used_kb / 1024).toFixed(1)),
+          free_mb: parseFloat((free_kb / 1024).toFixed(1)),
+          total_mb: parseFloat((total_kb / 1024).toFixed(1)),
+        };
+        setMemHistory((prev) => [...prev, point].slice(-60));
       }
     });
     return () => ws.close();
   }, [backendReady]);
 
+  const effectivePort = manualPort.trim() || selectedPort;
+
   async function handleOpen() {
     const response = await openSerial({
       mode,
-      port,
+      port: effectivePort,
       baudrate,
       replay_path: mode === "replay" ? replayPath : undefined,
       replay_interval_ms: replayIntervalMs,
@@ -252,7 +293,7 @@ export default function Dashboard() {
       setSerialPorts(ports);
       if (ports.length > 0) {
         const preferredPort = choosePreferredPort(ports);
-        setPort((prev) => {
+        setSelectedPort((prev) => {
           if (ports.some((portInfo) => portInfo.device === prev)) {
             return prev;
           }
@@ -311,8 +352,16 @@ export default function Dashboard() {
 
         {mode === "serial" ? (
           <div style={{ display: "grid", gap: 8 }}>
-            <div style={{ display: "flex", gap: 8 }}>
-              <select value={port} onChange={(e) => setPort(e.target.value)} style={{ width: 240 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <select
+                value={selectedPort}
+                onChange={(e) => setSelectedPort(e.target.value)}
+                style={{
+                  width: 240,
+                  opacity: manualPort.trim() ? 0.45 : 1,
+                  pointerEvents: manualPort.trim() ? "none" : "auto",
+                }}
+              >
                 <option value="">Select detected serial port</option>
                 {serialPorts.map((serialPort) => (
                   <option key={serialPort.device} value={serialPort.device}>
@@ -340,12 +389,39 @@ export default function Dashboard() {
                 Open
               </button>
             </div>
-            <input
-              value={port}
-              onChange={(e) => setPort(e.target.value)}
-              placeholder="Manual serial port override (optional, e.g. /dev/ttyUSB0)"
-              style={{ width: 240 }}
-            />
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
+                <input
+                  value={manualPort}
+                  onChange={(e) => setManualPort(e.target.value)}
+                  placeholder="Manual override (e.g. /dev/ttyUSB0)"
+                  style={{ width: 240, paddingRight: manualPort ? 24 : undefined }}
+                />
+                {manualPort ? (
+                  <button
+                    type="button"
+                    onClick={() => setManualPort("")}
+                    title="Clear manual override"
+                    style={{
+                      position: "absolute",
+                      right: 4,
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      fontSize: 14,
+                      color: "#666",
+                      padding: "0 2px",
+                      lineHeight: 1,
+                    }}
+                  >
+                    ×
+                  </button>
+                ) : null}
+              </div>
+            </div>
+            {manualPort.trim() ? (
+              <div style={{ fontSize: 11, color: "#1565c0" }}>Using manual port: {manualPort.trim()}</div>
+            ) : null}
             <input
               type="number"
               value={baudrate}
@@ -386,7 +462,8 @@ export default function Dashboard() {
     ),
     [
       mode,
-      port,
+      selectedPort,
+      manualPort,
       baudrate,
       replayPath,
       replayIntervalMs,
@@ -395,7 +472,6 @@ export default function Dashboard() {
       portsError,
       backendReady,
       refreshSerialPorts,
-      currentLogFileName,
     ],
   );
 
@@ -469,7 +545,7 @@ export default function Dashboard() {
             <h3 style={{ marginTop: 0, marginBottom: 8 }}>CPU Monitor Commands</h3>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start" }}>
               <button type="button" onClick={() => void handleRunTop()} disabled={!backendReady}>
-                Memory Info
+                Run top
               </button>
               <button type="button" onClick={() => void handleStopCommand()} disabled={!backendReady}>
                 Stop
@@ -578,6 +654,9 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+      {cpuHistory.length > 0 ? <CpuChart data={cpuHistory} coreKeys={cpuCoreKeys} /> : null}
+      <MemoryChart data={memHistory} />
+      {backendReady ? <ClientsPanel clientsByRadio={clientsByRadio} /> : null}
       <ConsolePanel
         lines={lines}
         onSend={handleSend}

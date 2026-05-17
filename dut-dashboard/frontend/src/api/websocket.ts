@@ -51,6 +51,12 @@ export type DashboardEvent =
       total_size: number;
       clients: WifiClient[];
     }
+  | {
+      type: "memory_update";
+      used_kb: number;
+      free_kb: number;
+      total_kb: number;
+    }
   | { type: string; [key: string]: unknown };
 
 export function connectDashboardWebSocket(onEvent: (event: DashboardEvent) => void): WebSocket {

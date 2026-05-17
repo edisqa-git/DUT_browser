@@ -32,4 +32,4 @@ class WebSocketManager:
     def emit_from_thread(self, event: dict[str, Any]) -> None:
         if self._loop is None:
             return
-        self._loop.call_soon_threadsafe(asyncio.create_task, self.broadcast(event))
+        asyncio.run_coroutine_threadsafe(self.broadcast(event), self._loop)

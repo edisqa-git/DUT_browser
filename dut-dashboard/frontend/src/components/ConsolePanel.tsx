@@ -150,6 +150,8 @@ export default function ConsolePanel({
     });
   }
 
+  const consoleText = useMemo(() => lines.join("\n"), [lines]);
+
   const editorExtensions = useMemo(
     () => [
       vim({ status: true }),
@@ -239,7 +241,7 @@ export default function ConsolePanel({
           whiteSpace: "pre-wrap",
         }}
       >
-        {lines.join("\n")}
+        {consoleText}
       </div>
       <form onSubmit={handleSubmit} style={{ marginTop: 8, display: "flex", gap: 8 }}>
         <input

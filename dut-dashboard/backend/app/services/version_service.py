@@ -124,5 +124,11 @@ class VersionService:
 
     def _parse_version(self, version: str) -> tuple[int, int, int]:
         normalized = version[1:] if version.startswith("v") else version
-        major, minor, patch = normalized.split(".", 2)
-        return int(major), int(minor), int(patch)
+        parts = normalized.split(".", 2)
+        try:
+            major = int(parts[0]) if len(parts) > 0 else 0
+            minor = int(parts[1]) if len(parts) > 1 else 0
+            patch = int(parts[2].split("-")[0].split("+")[0]) if len(parts) > 2 else 0
+            return major, minor, patch
+        except (ValueError, IndexError):
+            return (0, 0, 0)
