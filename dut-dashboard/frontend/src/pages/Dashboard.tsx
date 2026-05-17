@@ -15,6 +15,7 @@ import { connectDashboardWebSocket, SnapshotPayload, WifiClient } from "../api/w
 import ClientsPanel from "../components/ClientsPanel";
 import ConsolePanel from "../components/ConsolePanel";
 import CpuChart, { CpuPoint } from "../components/CpuChart";
+import MemoryChart, { MemPoint } from "../components/MemoryChart";
 const DEFAULT_SERIAL_PORT = "/dev/ttyUSB0";
 const CRITICAL_CRASH_PATTERN = /\b(kernel panic|q6 crash|watchdog(?:\s+reset|\s+bite|\s+timeout)?)\b/i;
 
@@ -52,6 +53,7 @@ export default function Dashboard() {
   const [downloadNotice, setDownloadNotice] = useState<{ message: string; tone: "blue" | "green" } | null>(null);
   const [cpuHistory, setCpuHistory] = useState<CpuPoint[]>([]);
   const [cpuCoreKeys, setCpuCoreKeys] = useState<string[]>([]);
+  const [memHistory, setMemHistory] = useState<MemPoint[]>([]);
   const [clientsByRadio, setClientsByRadio] = useState<Record<"2G" | "5G" | "6G", WifiClient[]>>({
     "2G": [],
     "5G": [],
@@ -160,6 +162,17 @@ export default function Dashboard() {
       if (event.type === "wifi_clients_update") {
         const { radio, clients } = event as { type: string; radio: "2G" | "5G" | "6G"; clients: WifiClient[] };
         setClientsByRadio((prev) => ({ ...prev, [radio]: clients }));
+        return;
+      }
+      if (event.type === "memory_update") {
+        const { used_kb, free_kb, total_kb } = event as { type: string; used_kb: number; free_kb: number; total_kb: number };
+        const point: MemPoint = {
+          ts: new Date().toLocaleTimeString(),
+          used_mb: parseFloat((used_kb / 1024).toFixed(1)),
+          free_mb: parseFloat((free_kb / 1024).toFixed(1)),
+          total_mb: parseFloat((total_kb / 1024).toFixed(1)),
+        };
+        setMemHistory((prev) => [...prev, point].slice(-60));
       }
     });
     return () => ws.close();
@@ -532,7 +545,7 @@ export default function Dashboard() {
             <h3 style={{ marginTop: 0, marginBottom: 8 }}>CPU Monitor Commands</h3>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start" }}>
               <button type="button" onClick={() => void handleRunTop()} disabled={!backendReady}>
-                Memory Info
+                Run top
               </button>
               <button type="button" onClick={() => void handleStopCommand()} disabled={!backendReady}>
                 Stop
@@ -642,6 +655,7 @@ export default function Dashboard() {
         </div>
       </div>
       {cpuHistory.length > 0 ? <CpuChart data={cpuHistory} coreKeys={cpuCoreKeys} /> : null}
+      <MemoryChart data={memHistory} />
       {backendReady ? <ClientsPanel clientsByRadio={clientsByRadio} /> : null}
       <ConsolePanel
         lines={lines}
