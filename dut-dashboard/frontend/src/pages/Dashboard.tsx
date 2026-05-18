@@ -45,6 +45,7 @@ export default function Dashboard() {
   const [replayPath, setReplayPath] = useState("logs/sample.log");
   const [replayIntervalMs, setReplayIntervalMs] = useState(100);
   const [serialPorts, setSerialPorts] = useState<SerialPortInfo[]>([]);
+  const [globDevices, setGlobDevices] = useState<string[]>([]);
   const [portsLoading, setPortsLoading] = useState(false);
   const [portsError, setPortsError] = useState("");
   const [currentLogFileName, setCurrentLogFileName] = useState("");
@@ -366,8 +367,9 @@ export default function Dashboard() {
     setPortsLoading(true);
     setPortsError("");
     try {
-      const ports = await listSerialPorts();
+      const { ports, glob_devices } = await listSerialPorts();
       setSerialPorts(ports);
+      setGlobDevices(glob_devices);
       if (ports.length > 0) {
         const preferredPort = choosePreferredPort(ports);
         setSelectedPort((prev) => {
@@ -392,6 +394,25 @@ export default function Dashboard() {
       void refreshSerialPorts();
     }
   }, [backendReady, mode, refreshSerialPorts]);
+
+  useEffect(() => {
+    if (!backendReady || mode !== "serial") return;
+    const id = setInterval(async () => {
+      try {
+        const { ports, glob_devices } = await listSerialPorts();
+        setSerialPorts(ports);
+        setGlobDevices(glob_devices);
+        setSelectedPort((prev) => {
+          if (ports.some((p) => p.device === prev)) return prev;
+          if (prev && prev !== DEFAULT_SERIAL_PORT) return prev;
+          return ports.length > 0 ? choosePreferredPort(ports) : prev;
+        });
+      } catch {
+        // silent — don't surface background poll errors
+      }
+    }, 3000);
+    return () => clearInterval(id);
+  }, [backendReady, mode]);
 
   const controls = useMemo(
     () => (
@@ -468,10 +489,16 @@ export default function Dashboard() {
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
               <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
+                <datalist id="port-datalist">
+                  {[...new Set([...globDevices, ...serialPorts.map((p) => p.device)])].map((dev) => (
+                    <option key={dev} value={dev} />
+                  ))}
+                </datalist>
                 <input
                   value={manualPort}
                   onChange={(e) => setManualPort(e.target.value)}
-                  placeholder="Manual override (e.g. /dev/ttyUSB0)"
+                  placeholder="Manual override (e.g. /dev/cu.usbserial-0001)"
+                  list="port-datalist"
                   style={{ width: 240, paddingRight: manualPort ? 24 : undefined }}
                 />
                 {manualPort ? (

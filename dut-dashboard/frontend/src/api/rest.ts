@@ -20,6 +20,11 @@ export type SerialPortInfo = {
   hwid: string;
 };
 
+export type SerialPortsResponse = {
+  ports: SerialPortInfo[];
+  glob_devices: string[];
+};
+
 export type HealthResponse = {
   ok: boolean;
   phase: string;
@@ -77,9 +82,8 @@ export async function sendSerial(text: string): Promise<{ ok: boolean }> {
   return post<{ ok: boolean }>("/api/serial/send", { text });
 }
 
-export async function listSerialPorts(): Promise<SerialPortInfo[]> {
-  const result = await get<{ ports: SerialPortInfo[] }>("/api/serial/ports");
-  return result.ports;
+export async function listSerialPorts(): Promise<SerialPortsResponse> {
+  return get<SerialPortsResponse>("/api/serial/ports");
 }
 
 export async function getHealth(): Promise<HealthResponse> {

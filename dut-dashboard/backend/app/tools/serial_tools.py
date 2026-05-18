@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import glob
 from typing import Literal
 
 from serial.tools import list_ports
@@ -14,7 +15,8 @@ def list_serial_ports(ctx: AppContext) -> dict:  # noqa: ARG001
         {"device": p.device, "description": p.description or "", "hwid": p.hwid or ""}
         for p in list_ports.comports()
     ]
-    return {"ports": ports}
+    glob_devices = sorted(set(glob.glob("/dev/cu.*")))
+    return {"ports": ports, "glob_devices": glob_devices}
 
 
 @tool(name="open_serial", description="Open a serial port or start log replay", tags=["serial"])
