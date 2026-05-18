@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 from app.api.app_api import router as app_router
 from app.api.analyzer_api import router as analyzer_router
 from app.api.serial_api import router as serial_router
+from app.api.snapshot_api import router as snapshot_router
 from app.config import ANALYZER_OUTPUT_DIR, SNAPSHOT_FILE
 from app.parser.sysmon_parser import SysMonParser
 from app.serial.serial_worker import SerialWorker
@@ -27,12 +28,15 @@ from app.websocket.ws_manager import WebSocketManager
 async def lifespan(app: FastAPI):  # type: ignore[type-arg]
     ws_manager = WebSocketManager()
     ws_manager.bind_loop(asyncio.get_running_loop())
+    snapshot_store = SnapshotStore(SNAPSHOT_FILE)
 
     def on_event(event: dict) -> None:
         ws_manager.emit_from_thread(event)
+        if event.get("type") == "snapshot_update":
+            snapshot_store.append(event["snapshot"])
 
     app.state.ws_manager = ws_manager
-    app.state.snapshot_store = SnapshotStore(SNAPSHOT_FILE)
+    app.state.snapshot_store = snapshot_store
     app.state.parser = SysMonParser(on_event=on_event)
     app.state.serial_worker = SerialWorker(app.state.parser)
     app.state.analyzer_service = AnalyzerService()
@@ -57,6 +61,7 @@ app.add_middleware(
 app.include_router(app_router)
 app.include_router(serial_router)
 app.include_router(analyzer_router)
+app.include_router(snapshot_router)
 
 
 @app.get("/health")

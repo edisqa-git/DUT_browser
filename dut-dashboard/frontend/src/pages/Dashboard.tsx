@@ -16,6 +16,7 @@ import ClientsPanel from "../components/ClientsPanel";
 import ConsolePanel from "../components/ConsolePanel";
 import CpuChart, { CpuPoint } from "../components/CpuChart";
 import MemoryChart, { MemPoint } from "../components/MemoryChart";
+import SnapshotReplayPanel from "../components/SnapshotReplayPanel";
 const DEFAULT_SERIAL_PORT = "/dev/ttyUSB0";
 const CRITICAL_CRASH_PATTERN = /\b(kernel panic|q6 crash|watchdog(?:\s+reset|\s+bite|\s+timeout)?)\b/i;
 
@@ -61,6 +62,8 @@ export default function Dashboard() {
   });
   const [isSerialOpen, setIsSerialOpen] = useState(false);
   const [reconnectStatus, setReconnectStatus] = useState<string | null>(null);
+  const [replayProgress, setReplayProgress] = useState<{ frame: number; total: number } | null>(null);
+  const [replayStatus, setReplayStatus] = useState<"idle" | "playing" | "done" | "stopped">("idle");
 
   type OpenParams = { mode: "serial" | "replay"; port: string; baudrate: number; replay_path?: string; replay_interval_ms: number };
   const lastOpenParamsRef = useRef<OpenParams | null>(null);
@@ -188,6 +191,22 @@ export default function Dashboard() {
       if (event.type === "serial_disconnected") {
         setIsSerialOpen(false);
         scheduleReconnectRef.current();
+        return;
+      }
+      if (event.type === "replay_progress") {
+        const { frame, total } = event as { type: string; frame: number; total: number };
+        setReplayProgress({ frame, total });
+        setReplayStatus("playing");
+        return;
+      }
+      if (event.type === "replay_done") {
+        const { total } = event as { type: string; total: number };
+        setReplayProgress((prev) => (prev ? { ...prev, frame: total } : { frame: total, total }));
+        setReplayStatus("done");
+        return;
+      }
+      if (event.type === "replay_stopped") {
+        setReplayStatus("stopped");
         return;
       }
     });
@@ -731,6 +750,13 @@ export default function Dashboard() {
       {cpuHistory.length > 0 ? <CpuChart data={cpuHistory} coreKeys={cpuCoreKeys} /> : null}
       <MemoryChart data={memHistory} />
       {backendReady ? <ClientsPanel clientsByRadio={clientsByRadio} /> : null}
+      {backendReady ? (
+        <SnapshotReplayPanel
+          replayStatus={replayStatus}
+          replayProgress={replayProgress}
+          onReplayStatusChange={setReplayStatus}
+        />
+      ) : null}
       <ConsolePanel
         lines={lines}
         onSend={handleSend}

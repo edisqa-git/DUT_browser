@@ -57,6 +57,9 @@ export type DashboardEvent =
       free_kb: number;
       total_kb: number;
     }
+  | { type: "replay_progress"; frame: number; total: number }
+  | { type: "replay_done"; total: number }
+  | { type: "replay_stopped" }
   | { type: string; [key: string]: unknown };
 
 export function connectDashboardWebSocket(onEvent: (event: DashboardEvent) => void): WebSocket {

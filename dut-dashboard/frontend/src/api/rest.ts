@@ -98,3 +98,27 @@ export async function getUpdateCheck(force = false): Promise<UpdateCheckResponse
 export function getSerialLogDownloadUrl(fileName: string): string {
   return apiUrl(`/api/serial/logs/${encodeURIComponent(fileName)}`);
 }
+
+export type SnapshotFileInfo = {
+  name: string;
+  size_bytes: number;
+  frames: number;
+  mtime: number;
+};
+
+export async function listSnapshots(): Promise<SnapshotFileInfo[]> {
+  const result = await get<{ files: SnapshotFileInfo[] }>("/api/snapshots/list");
+  return result.files;
+}
+
+export async function startSnapshotReplay(file: string, speedMs: number): Promise<{ ok: boolean; total: number; file: string }> {
+  return post<{ ok: boolean; total: number; file: string }>("/api/snapshots/replay/start", { file, speed_ms: speedMs });
+}
+
+export async function stopSnapshotReplay(): Promise<{ ok: boolean }> {
+  return post<{ ok: boolean }>("/api/snapshots/replay/stop", {});
+}
+
+export function getSnapshotDownloadUrl(fileName: string): string {
+  return apiUrl(`/api/snapshots/${encodeURIComponent(fileName)}/download`);
+}
