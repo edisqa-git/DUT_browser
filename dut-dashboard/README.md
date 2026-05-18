@@ -56,8 +56,28 @@ All routes are prefixed by the FastAPI app mounted at `/`.
 | `POST` | `/api/serial/open` | Open serial port or start replay |
 | `POST` | `/api/serial/close` | Stop serial session |
 | `POST` | `/api/serial/send` | Send raw text to DUT |
-| `GET` | `/api/serial/ports` | List available serial ports |
+| `GET` | `/api/serial/ports` | List available serial ports + glob scan |
 | `GET` | `/api/serial/logs/{file_name}` | Download log (raw `.log` or analyzer `.zip`) |
+
+**`GET /api/serial/ports` response:**
+
+```json
+{
+  "ports": [{ "device": "/dev/cu.usbserial-0001", "description": "...", "hwid": "..." }],
+  "glob_devices": ["/dev/cu.Bluetooth-Incoming-Port", "/dev/cu.usbserial-0001"]
+}
+```
+
+`ports` — pyserial-detected devices (with description/hwid). `glob_devices` — all `/dev/cu.*` paths found via glob (macOS); may include devices pyserial doesn't enumerate.
+
+#### Snapshots
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/snapshots/list` | List saved `.jsonl` snapshot files |
+| `POST` | `/api/snapshots/replay/start` | Start replay; body: `{"file": "snapshots.jsonl", "speed_ms": 500}` |
+| `POST` | `/api/snapshots/replay/stop` | Stop an in-progress replay |
+| `GET` | `/api/snapshots/{file_name}/download` | Download a snapshot JSONL file |
 
 **`POST /api/serial/open` body:**
 
@@ -164,7 +184,8 @@ Tools are registered with `@tool` and dispatched via WebSocket JSON messages.
 | `open_serial` | `serial_tools` | Open port or start replay |
 | `close_serial` | `serial_tools` | Stop session |
 | `send_serial` | `serial_tools` | Send text to DUT |
-| `list_ports` | `serial_tools` | List available serial ports |
+| `list_serial_ports` | `serial_tools` | List available serial ports + glob scan |
+| `get_efficiency_report` | `serial_tools` | Serial read efficiency stats |
 | `run_analyzer` | `analyzer_tools` | Trigger offline analysis |
 | `download_artifact` | `analyzer_tools` | Fetch an artifact file |
 
@@ -262,6 +283,32 @@ Emitted each time a `Mem: XK used, YK free …` line is parsed (from `top` outpu
 { "type": "memory_update", "used_kb": 74616, "free_kb": 12504, "total_kb": 87120 }
 ```
 
+#### `serial_disconnected`
+
+```json
+{ "type": "serial_disconnected" }
+```
+
+Emitted when the serial read loop exits unexpectedly (stop_event not set). Frontend retries up to 5 times (2 s apart) and shows an amber banner.
+
+#### `replay_progress`
+
+```json
+{ "type": "replay_progress", "frame": 12, "total": 120 }
+```
+
+#### `replay_done`
+
+```json
+{ "type": "replay_done", "total": 120 }
+```
+
+#### `replay_stopped`
+
+```json
+{ "type": "replay_stopped" }
+```
+
 #### `tool_result`
 
 ```json
@@ -304,10 +351,19 @@ Wi-Fi client table grouped by radio band (2G / 5G / 6G).
 ### `ConsolePanel.tsx`
 
 Serial terminal. Features:
-- Scrollback buffer (last 1000 lines, memoized join)
+- Scrollback buffer (last 1000 lines, memoized join; ANSI escape sequences stripped)
 - Stick-to-bottom auto-scroll; releases on manual scroll up
 - Inline command input + **Edit in Popup** (CodeMirror + vim mode)
 - Global `Ctrl+C` / `Cmd+C` sends `` to DUT (skips if text is selected)
+- `canSend` prop disables Send / Edit-in-Popup when serial is not open
+
+### `SnapshotReplayPanel.tsx`
+
+Snapshot file browser and playback controller.
+- Lists saved `.jsonl` files with name, frame count, size, and timestamp
+- Per-file download button
+- Speed input (ms per frame) + Start / Stop buttons
+- Progress bar driven by `replay_progress` events
 
 ---
 
@@ -324,7 +380,13 @@ cd dut-dashboard/frontend
 npx tsc --noEmit
 ```
 
-Current test coverage: `test_serial_download_workflow.py` — 6 tests covering the log download + analyzer integration path.
+Current test coverage: 42 tests across 3 files:
+
+| File | Tests | Scope |
+|------|-------|-------|
+| `test_serial_download_workflow.py` | 6 | log download + analyzer path |
+| `test_sysmon_parser.py` | 29 | SNAPSHOT_RE / CPU_RE / MEM_RE patterns + `feed()` integration |
+| `test_snapshot_api.py` | 7 | snapshot `safe_name` validation + `list_snapshots` logic |
 
 ---
 

@@ -103,10 +103,20 @@ Produces a native installer under `desktop/src-tauri/target/release/bundle/`. QA
 
 ### Serial Console
 
-- Connect to a DUT via serial port (dropdown auto-detects available ports; manual override supported)
+- Connect to a DUT via serial port — dropdown auto-detects pyserial ports; manual override input with autocomplete (sourced from `/dev/cu.*` glob scan)
+- Dropdown auto-refreshes every 3 seconds while in Serial mode (silent, no flicker)
 - Replay mode: feed a saved `.log` file at configurable speed for offline testing
 - Full-featured terminal with vim popup editor for long/multi-line commands
 - `Ctrl+C` global shortcut sends interrupt to DUT
+- ANSI escape sequences stripped before display
+- Auto-reconnect on unexpected disconnect: up to 5 retries (2 s apart) with amber status banner
+
+### Snapshot Replay
+
+- Replay a previously saved `snapshots.jsonl` from the Snapshot Replay panel
+- Configurable playback speed (ms per frame)
+- Progress bar shows current frame / total; Start / Stop controls
+- Each frame re-broadcasts `snapshot_update` (and `memory_update` when memory data is present) — all live charts update in sync
 
 ### Live Charts
 
@@ -160,6 +170,10 @@ All events flow over `ws://127.0.0.1:8765/ws` as JSON.
 | `snapshot_delta` | server → client | partial update; client merges into last snapshot |
 | `wifi_clients_update` | server → client | `radio: "2G"\|"5G"\|"6G"`, `total_size`, `clients` |
 | `memory_update` | server → client | `used_kb`, `free_kb`, `total_kb` |
+| `serial_disconnected` | server → client | serial read loop exited unexpectedly (triggers auto-reconnect) |
+| `replay_progress` | server → client | `frame: number`, `total: number` |
+| `replay_done` | server → client | `total: number` |
+| `replay_stopped` | server → client | — (stop was requested) |
 | `{"tool": "...", "params": {}}` | client → server | TOOL_REGISTRY dispatch; response: `{"type":"tool_result", ...}` |
 
 **CpuCore fields:** `usr`, `sys`, `nic`, `idle`, `io`, `irq`, `sirq` (all `number`, percent)
