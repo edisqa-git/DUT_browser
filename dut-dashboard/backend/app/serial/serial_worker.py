@@ -93,19 +93,25 @@ class SerialWorker:
             self._serial.flush()
 
     def read_loop(self) -> None:
+        disconnected = False
         while not self._stop_event.is_set():
             ser = self._serial
             if ser is None or not ser.is_open:
+                disconnected = not self._stop_event.is_set()
                 break
             try:
                 line = ser.readline()
             except Exception:
+                disconnected = not self._stop_event.is_set()
                 break
             if not line:
                 continue
             decoded = line.decode("utf-8", errors="ignore")
             self._write_log_line(decoded)
             self.parser.feed(decoded)
+
+        if disconnected:
+            self.parser.on_event({"type": "serial_disconnected"})
 
     def _replay_loop(self, replay_file: Path, replay_interval_ms: int) -> None:
         delay_sec = max(1, replay_interval_ms) / 1000.0

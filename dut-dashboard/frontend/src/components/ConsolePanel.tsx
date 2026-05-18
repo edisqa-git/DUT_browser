@@ -8,6 +8,7 @@ type Props = {
   onSend: (text: string) => Promise<void>;
   onDownloadLog: () => void;
   canDownloadLog: boolean;
+  canSend?: boolean;
 };
 
 export default function ConsolePanel({
@@ -15,6 +16,7 @@ export default function ConsolePanel({
   onSend,
   onDownloadLog,
   canDownloadLog,
+  canSend = true,
 }: Props) {
   const LONG_COMMAND_WORD_THRESHOLD = 100;
   const [command, setCommand] = useState("");
@@ -150,7 +152,7 @@ export default function ConsolePanel({
     });
   }
 
-  const consoleText = useMemo(() => lines.join("\n"), [lines]);
+  const consoleText = useMemo(() => lines.map(stripAnsi).join("\n"), [lines]);
 
   const editorExtensions = useMemo(
     () => [
@@ -250,11 +252,12 @@ export default function ConsolePanel({
           onKeyDown={handleInputKeyDown}
           placeholder="Type command"
           style={{ flex: 1 }}
+          disabled={!canSend}
         />
-        <button type="button" onClick={openEditor}>
+        <button type="button" onClick={openEditor} disabled={!canSend}>
           Edit in Popup
         </button>
-        <button type="submit">Send</button>
+        <button type="submit" disabled={!canSend}>Send</button>
       </form>
       <div style={{ marginTop: 6, fontSize: 12, color: shouldSuggestPopup ? "#8a4b00" : "#666" }}>
         {shouldSuggestPopup
@@ -308,7 +311,7 @@ export default function ConsolePanel({
                 >
                   Keep Draft
                 </button>
-                <button type="button" onClick={() => void handlePopupSend()}>
+                <button type="button" onClick={() => void handlePopupSend()} disabled={!canSend}>
                   Send
                 </button>
               </div>
@@ -318,6 +321,12 @@ export default function ConsolePanel({
       ) : null}
     </div>
   );
+}
+
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\x1b\[[0-9;]*[A-Za-z]|\x1b[()][AB012]|\x1b[^[\]]/g;
+function stripAnsi(line: string): string {
+  return line.replace(ANSI_RE, "");
 }
 
 function countWords(value: string): number {

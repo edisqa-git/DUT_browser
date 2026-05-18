@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   closeSerial,
@@ -59,6 +59,16 @@ export default function Dashboard() {
     "5G": [],
     "6G": [],
   });
+  const [isSerialOpen, setIsSerialOpen] = useState(false);
+  const [reconnectStatus, setReconnectStatus] = useState<string | null>(null);
+
+  type OpenParams = { mode: "serial" | "replay"; port: string; baudrate: number; replay_path?: string; replay_interval_ms: number };
+  const lastOpenParamsRef = useRef<OpenParams | null>(null);
+  const reconnectAttemptsRef = useRef(0);
+  const reconnectTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const MAX_RECONNECT = 5;
+  const scheduleReconnectRef = useRef<() => void>(() => {});
+  const doReconnectRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
     let cancelled = false;
@@ -173,6 +183,12 @@ export default function Dashboard() {
           total_mb: parseFloat((total_kb / 1024).toFixed(1)),
         };
         setMemHistory((prev) => [...prev, point].slice(-60));
+        return;
+      }
+      if (event.type === "serial_disconnected") {
+        setIsSerialOpen(false);
+        scheduleReconnectRef.current();
+        return;
       }
     });
     return () => ws.close();
@@ -180,21 +196,63 @@ export default function Dashboard() {
 
   const effectivePort = manualPort.trim() || selectedPort;
 
+  scheduleReconnectRef.current = () => {
+    if (reconnectAttemptsRef.current >= MAX_RECONNECT || !lastOpenParamsRef.current) {
+      setReconnectStatus("Serial disconnected. Auto-reconnect gave up.");
+      return;
+    }
+    reconnectAttemptsRef.current += 1;
+    const attempt = reconnectAttemptsRef.current;
+    setReconnectStatus(`Serial disconnected. Reconnecting... (${attempt}/${MAX_RECONNECT})`);
+    reconnectTimerRef.current = window.setTimeout(() => {
+      reconnectTimerRef.current = null;
+      void doReconnectRef.current();
+    }, 2000);
+  };
+
+  doReconnectRef.current = async () => {
+    const params = lastOpenParamsRef.current;
+    if (!params) return;
+    try {
+      const response = await openSerial(params);
+      const logPath = response.log_path || "";
+      const fileName = logPath.split(/[\\/]/).pop() || "";
+      setCurrentLogFileName(fileName);
+      setIsSerialOpen(true);
+      setReconnectStatus(null);
+      reconnectAttemptsRef.current = 0;
+    } catch {
+      scheduleReconnectRef.current();
+    }
+  };
+
   async function handleOpen() {
-    const response = await openSerial({
+    const params: OpenParams = {
       mode,
       port: effectivePort,
       baudrate,
       replay_path: mode === "replay" ? replayPath : undefined,
       replay_interval_ms: replayIntervalMs,
-    });
+    };
+    const response = await openSerial(params);
+    lastOpenParamsRef.current = params;
+    reconnectAttemptsRef.current = 0;
+    setReconnectStatus(null);
     const logPath = response.log_path || "";
     const fileName = logPath.split(/[\\/]/).pop() || "";
     setCurrentLogFileName(fileName);
+    setIsSerialOpen(true);
   }
 
   async function handleClose() {
+    if (reconnectTimerRef.current !== null) {
+      window.clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+    reconnectAttemptsRef.current = 0;
+    setReconnectStatus(null);
     await closeSerial();
+    setIsSerialOpen(false);
   }
 
   async function handleSend(text: string) {
@@ -322,7 +380,7 @@ export default function Dashboard() {
         <div style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: 8, alignItems: "center" }}>
           <button
             onClick={handleClose}
-            disabled={!backendReady}
+            disabled={!backendReady || !isSerialOpen}
             style={{
               width: 28,
               height: 28,
@@ -471,6 +529,7 @@ export default function Dashboard() {
       portsLoading,
       portsError,
       backendReady,
+      isSerialOpen,
       refreshSerialPorts,
     ],
   );
@@ -532,6 +591,21 @@ export default function Dashboard() {
         </div>
       ) : null}
       {controls}
+      {reconnectStatus ? (
+        <div
+          style={{
+            border: "1px solid #e0a030",
+            background: "#fff8e1",
+            color: "#7c5200",
+            borderRadius: 8,
+            padding: "10px 12px",
+            marginBottom: 12,
+            fontSize: 13,
+          }}
+        >
+          {reconnectStatus}
+        </div>
+      ) : null}
       <div style={{ border: "1px solid #ddd", padding: 12, marginBottom: 12 }}>
         <div
           style={{
@@ -544,10 +618,10 @@ export default function Dashboard() {
           <div>
             <h3 style={{ marginTop: 0, marginBottom: 8 }}>CPU Monitor Commands</h3>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start" }}>
-              <button type="button" onClick={() => void handleRunTop()} disabled={!backendReady}>
+              <button type="button" onClick={() => void handleRunTop()} disabled={!backendReady || !isSerialOpen}>
                 Run top
               </button>
-              <button type="button" onClick={() => void handleStopCommand()} disabled={!backendReady}>
+              <button type="button" onClick={() => void handleStopCommand()} disabled={!backendReady || !isSerialOpen}>
                 Stop
               </button>
             </div>
@@ -662,6 +736,7 @@ export default function Dashboard() {
         onSend={handleSend}
         onDownloadLog={handleDownloadLog}
         canDownloadLog={backendReady && Boolean(currentLogFileName)}
+        canSend={isSerialOpen}
       />
       {downloadNotice ? (
         <div
