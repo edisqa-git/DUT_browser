@@ -31,7 +31,8 @@ def list_snapshots() -> dict:
     files = sorted(LOG_DIR.glob("*.jsonl"), key=lambda f: f.stat().st_mtime, reverse=True)
     result = []
     for f in files:
-        frames = sum(1 for line in f.open(encoding="utf-8") if line.strip())
+        with f.open(encoding="utf-8") as fp:
+            frames = sum(1 for line in fp if line.strip())
         result.append(
             {
                 "name": f.name,
@@ -63,7 +64,10 @@ async def start_replay(body: ReplayStartRequest, request: Request) -> dict:
     async def do_replay() -> None:
         try:
             for i, line in enumerate(lines):
-                snapshot = json.loads(line)
+                try:
+                    snapshot = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
                 await ws_manager.broadcast({"type": "snapshot_update", "snapshot": snapshot})
                 if "memory" in snapshot and isinstance(snapshot["memory"], dict):
                     mem = snapshot["memory"]

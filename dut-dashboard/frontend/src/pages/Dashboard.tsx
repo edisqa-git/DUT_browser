@@ -73,6 +73,7 @@ export default function Dashboard() {
   const MAX_RECONNECT = 5;
   const scheduleReconnectRef = useRef<() => void>(() => {});
   const doReconnectRef = useRef<() => Promise<void>>(async () => {});
+  const rescanInFlightRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -398,6 +399,8 @@ export default function Dashboard() {
   useEffect(() => {
     if (!backendReady || mode !== "serial") return;
     const id = setInterval(async () => {
+      if (rescanInFlightRef.current) return;
+      rescanInFlightRef.current = true;
       try {
         const { ports, glob_devices } = await listSerialPorts();
         setSerialPorts(ports);
@@ -409,6 +412,8 @@ export default function Dashboard() {
         });
       } catch {
         // silent — don't surface background poll errors
+      } finally {
+        rescanInFlightRef.current = false;
       }
     }, 3000);
     return () => clearInterval(id);
@@ -577,6 +582,7 @@ export default function Dashboard() {
       backendReady,
       isSerialOpen,
       refreshSerialPorts,
+      globDevices,
     ],
   );
 
